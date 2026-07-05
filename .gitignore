@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+.venv/
+mac/_audio/
+.device_state.json
+.device_state.json.tmp
+.pytest_cache/

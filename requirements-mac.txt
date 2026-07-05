@@ -1,0 +1,3 @@
+# device v2 — Mac prototype. pygame is the only runtime dependency.
+pygame>=2.1
+pytest>=7        # tests only

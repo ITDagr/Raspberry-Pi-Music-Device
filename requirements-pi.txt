@@ -1,0 +1,9 @@
+# device v2 — Raspberry Pi (Pi OS Bookworm Lite, Python 3.11)
+pygame>=2.1
+numpy
+spidev
+RPi.GPIO
+adafruit-blinka
+adafruit-circuitpython-seesaw
+adafruit-circuitpython-drv2605
+python-mpd2
