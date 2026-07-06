@@ -15,15 +15,21 @@ from shared.menu_core import MenuView
 
 SIZE = 240
 HEADER_H = 26
+LIST_Y0 = 66   # first menu row baseline
+ROW_H = 33     # menu row pitch
 
+# The palette: every draw call uses one of these names, nothing ad hoc.
 BG = (16, 16, 20)
 FG = (235, 235, 240)
 MUTED = (140, 140, 155)
 DIM = (90, 90, 105)
 ACCENT = (120, 190, 255)
-PILL = (44, 48, 66)
+HIGHLIGHT_BG = (44, 48, 66)     # cursor pill
+HIGHLIGHT_FG = (255, 255, 255)  # cursor row text
 BAR_BG = (50, 52, 64)
 GREEN = (120, 220, 140)
+
+_FONT_SIZES = (15, 16, 17, 18, 19, 20, 22, 24, 44, 64)
 
 ABOUT_FEATURES = [
     "device v2.0",
@@ -49,7 +55,14 @@ class ScreenRenderer:
     def __init__(self) -> None:
         if not pygame.font.get_init():
             pygame.font.init()
-        self._fonts: dict[int, pygame.font.Font] = {}
+        # Cache pygame's bundled font (never SysFont) once, up front; a broken
+        # font install must fail loudly, not render invisible screens.
+        try:
+            self._fonts: dict[int, pygame.font.Font] = {
+                size: pygame.font.Font(None, size) for size in _FONT_SIZES
+            }
+        except (pygame.error, OSError) as e:
+            raise RuntimeError(f"renderer: cannot create fonts ({e})") from e
 
     # --- primitives -----------------------------------------------------------
     def _font(self, size: int) -> pygame.font.Font:
@@ -117,16 +130,15 @@ class ScreenRenderer:
         surface.fill(BG)
         self._header(surface, status)
         self._text(surface, view.title, 24, ACCENT, 12, 34)
-        y0, row_h = 66, 33
         for i, label in enumerate(view.items):
-            y = y0 + i * row_h
+            y = LIST_Y0 + i * ROW_H
             if i == view.cursor:
-                pygame.draw.rect(surface, PILL, (6, y - 3, SIZE - 18, row_h - 4),
-                                 border_radius=13)
-            color = FG if i == view.cursor else MUTED
+                pygame.draw.rect(surface, HIGHLIGHT_BG,
+                                 (6, y - 3, SIZE - 18, ROW_H - 4), border_radius=13)
+            color = HIGHLIGHT_FG if i == view.cursor else FG
             self._text(surface, self._fit(label, 22, SIZE - 40), 22, color, 18, y + 2)
-        self._scrollbar(surface, y0, 5 * row_h - 8,
-                        view.total, len(view.items), view.scroll)
+        self._scrollbar(surface, LIST_Y0, 5 * ROW_H - 8,
+                        view.total, len(view.items), view.window_start)
 
     def draw_nowplaying(self, surface, track, elapsed, playing, volume, status) -> None:
         surface.fill(BG)
@@ -191,17 +203,16 @@ class ScreenRenderer:
             self._text(surface, "No devices found", 20, MUTED, SIZE // 2, 110, align="center")
             self._text(surface, "back to rescan", 16, DIM, SIZE // 2, 136, align="center")
             return
-        y0, row_h = 66, 33
         scroll = max(0, min(cursor - 4, len(devices) - 5))
         for i, dev in enumerate(devices[scroll : scroll + 5]):
-            y = y0 + i * row_h
+            y = LIST_Y0 + i * ROW_H
             selected = scroll + i == cursor
             if selected:
-                pygame.draw.rect(surface, PILL, (6, y - 3, SIZE - 18, row_h - 4),
-                                 border_radius=13)
+                pygame.draw.rect(surface, HIGHLIGHT_BG,
+                                 (6, y - 3, SIZE - 18, ROW_H - 4), border_radius=13)
             self._text(surface, self._fit(dev["name"], 22, SIZE - 40), 22,
-                       FG if selected else MUTED, 18, y + 2)
-        self._scrollbar(surface, y0, 5 * row_h - 8, len(devices), 5, scroll)
+                       HIGHLIGHT_FG if selected else FG, 18, y + 2)
+        self._scrollbar(surface, LIST_Y0, 5 * ROW_H - 8, len(devices), 5, scroll)
 
     def draw_battery_screen(self, surface, status: dict) -> None:
         batt = status.get("battery")

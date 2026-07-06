@@ -31,14 +31,15 @@ class Menu:
     items: list[MenuItem]
 
 
-@dataclass
+@dataclass(frozen=True)
 class MenuView:
-    """What the renderer needs: a window of labels plus scrollbar geometry."""
+    """The one render model for menus: produced by MenuController.view(),
+    consumed by ScreenRenderer.draw(). No duck typing between the two."""
 
     title: str
     items: list[str]
-    cursor: int   # index within the visible window
-    scroll: int   # first visible row's absolute index
+    cursor: int        # index within the visible window
+    window_start: int  # first visible row's absolute index
     total: int
 
 
@@ -119,7 +120,7 @@ class MenuController:
             title=menu.title,
             items=[i.label for i in window],
             cursor=f.cursor - f.scroll,
-            scroll=f.scroll,
+            window_start=f.scroll,
             total=len(menu.items),
         )
 

@@ -2,6 +2,8 @@
 
 Run it:            python3 mac/prototype.py
 Headless selftest: python3 mac/prototype.py --selftest   (exit 0 = pass)
+Frame dumps:       python3 mac/prototype.py --dump-frames <dir>
+                   (selftest run that also saves a PNG of every screen)
 
 Opens a 480x480 window (2x scale of the 240x240 TFT) and runs the exact same
 shared.app main loop as the Pi, with keyboard/terminal stand-ins for hardware:
@@ -28,8 +30,15 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
+def _arg_value(flag: str) -> str | None:
+    if flag in sys.argv and sys.argv.index(flag) + 1 < len(sys.argv):
+        return sys.argv[sys.argv.index(flag) + 1]
+    return None
+
+
 SELFTEST = "--selftest" in sys.argv
-if SELFTEST:  # must land before pygame initializes SDL
+DUMP_DIR = _arg_value("--dump-frames")
+if SELFTEST or DUMP_DIR:  # must land before pygame initializes SDL
     os.environ["SDL_VIDEODRIVER"] = "dummy"
     os.environ["SDL_AUDIODRIVER"] = "dummy"
 
@@ -66,15 +75,40 @@ class ScriptedInput:
         return events
 
 
-class SelfTestRunner:
-    """Called once per frame by the app loop; drives and checks the script."""
+class CaptureDisplay(MockDisplay):
+    """MockDisplay that keeps copies of the last few pushed frames."""
 
-    def __init__(self, inp: ScriptedInput, tracks) -> None:
+    def __init__(self) -> None:
+        super().__init__()
+        self.frames: deque = deque(maxlen=8)
+
+    def push_frame(self, surface: pygame.Surface) -> None:
+        self.frames.append(surface.copy())
+        super().push_frame(surface)
+
+
+class SelfTestRunner:
+    """Called once per frame by the app loop; drives and checks the script.
+
+    With dump_dir set it also saves a PNG of every distinct screen it visits.
+    """
+
+    def __init__(self, inp: ScriptedInput, tracks, dump_dir: str | None = None,
+                 display: CaptureDisplay | None = None) -> None:
         self.inp = inp
         self.songs_ctx = extract_play_context(build_default_menus(tracks)["songs"])
+        self.dump_dir = dump_dir
+        self.display = display
         self._gen = None
         self._resume_at = 0.0
         self.done = False
+
+    def _snap(self, label: str, back: int = 1) -> None:
+        """Save the frame pushed `back` pushes ago (1 = most recent)."""
+        if self.dump_dir and self.display and len(self.display.frames) >= back:
+            path = os.path.join(self.dump_dir, f"{label}.png")
+            pygame.image.save(self.display.frames[-back], path)
+            print(f"frame: {path}")
 
     def __call__(self, application) -> None:
         if self.done or time.monotonic() < self._resume_at:
@@ -97,17 +131,27 @@ class SelfTestRunner:
             if not cond:
                 raise SelfTestError(msg)
 
+        # frames[-4] is the last boot-animation frame: startup pushes its final
+        # animation frame, then the first menu frame, then the app pushes the
+        # forced initial frame and the first loop frame (see shared/app.run)
+        self._snap("startup_final", back=4)
+        self._snap("menu_home")
         press("select"); yield 0  # home -> Music
         expect(a.ctrl.current_name == "music", f"expected music menu, got {a.ctrl.current_name}")
         press("scroll_down", "scroll_down", "select"); yield 0  # -> Songs
         expect(a.ctrl.current_name == "songs", f"expected songs menu, got {a.ctrl.current_name}")
+        self._snap("menu_songs")
         press("scroll_down", "scroll_down", "scroll_down", "select"); yield 0  # track 3
         expect(a.mode is Mode.NOWPLAYING and a.player.playing,
                f"expected NOWPLAYING+playing, got {a.mode} playing={a.player.playing}")
         expect(a.player.track.index == self.songs_ctx[3],
                f"wrong track: {a.player.track.index} != {self.songs_ctx[3]}")
+        self._snap("nowplaying")
         press("scroll_up", "scroll_up"); yield 0  # volume 50 -> 60
         expect(a.player.volume == 60, f"expected volume 60, got {a.player.volume}")
+        self._snap("volume_overlay")
+        if self.dump_dir:
+            yield 1.6  # let the overlay expire so later dumps are clean
         press("right"); yield 0  # next track
         expect(a.pos == 4 and a.player.track.index == self.songs_ctx[4],
                f"next track did not advance (pos={a.pos})")
@@ -124,26 +168,32 @@ class SelfTestRunner:
         expect(a.brightness == 70, f"expected brightness 70, got {a.brightness}")
         expect(abs(a.dimmer.wake_level - 0.7) < 1e-6,
                f"expected wake_level 0.7, got {a.dimmer.wake_level}")
+        self._snap("brightness")
         press("back"); yield 0
         expect(a.mode is Mode.MENU, "back should leave brightness")
         press("scroll_down", "select"); yield 0  # About
         expect(a.mode is Mode.ABOUT, f"expected ABOUT, got {a.mode}")
         press("scroll_down", "scroll_down"); yield 0
         expect(a.about_scroll == 2, f"expected about scroll 2, got {a.about_scroll}")
+        self._snap("about")
         press("back"); yield 0
         expect(a.mode is Mode.MENU and a.about_scroll == 0, "about should reset on back")
         press("scroll_up", "scroll_up", "select"); yield 0  # Battery
         expect(a.mode is Mode.BATTERY, f"expected BATTERY, got {a.mode}")
+        self._snap("battery")
         press("back"); yield 0
         press("scroll_up", "select"); yield 0  # Bluetooth (blocking fake scan)
         expect(a.mode is Mode.BLUETOOTH and len(a.bt_devices) > 0,
                f"expected BLUETOOTH with devices, got {a.mode} n={len(a.bt_devices)}")
+        self._snap("bluetooth_list")
         press("select"); yield 0  # connect first device
         expect(a.bt_connect_info and a.bt_connect_info["state"] == "connecting",
                f"expected connecting, got {a.bt_connect_info}")
+        self._snap("bluetooth_connecting")
         yield 4.5  # simulate the connection window
         expect(a.bt_connect_info and a.bt_connect_info["state"] == "connected",
                f"expected connected, got {a.bt_connect_info}")
+        self._snap("bluetooth_connected")
         press("back"); yield 0
         expect(a.mode is Mode.BLUETOOTH and a.bt_connect_info is None,
                "back from connected should return to the device list")
@@ -168,14 +218,17 @@ class SelfTestRunner:
             raise SelfTestError("state context does not match the songs context")
 
 
-def _run_selftest(tracks) -> int:
+def _run_selftest(tracks, dump_dir: str | None = None) -> int:
     config.STARTUP_DURATION_S = 0.2   # keep the run inside the time budget
     config.ENCODER_ACCEL = False      # scripted detents fire faster than 1 s
     if os.path.exists(config.STATE_PATH):
         os.remove(config.STATE_PATH)
+    if dump_dir:
+        os.makedirs(dump_dir, exist_ok=True)
     inp = ScriptedInput()
-    runner = SelfTestRunner(inp, tracks)
-    hw = HardwareBundle(MockDisplay(), inp, MockHaptic(), PlayerMac(tracks))
+    display = CaptureDisplay()
+    runner = SelfTestRunner(inp, tracks, dump_dir, display)
+    hw = HardwareBundle(display, inp, MockHaptic(), PlayerMac(tracks))
     t0 = time.monotonic()
     try:
         app.run(hw, tracks, bluetooth_mac, selftest_script=runner)
@@ -196,8 +249,8 @@ def main() -> int:
     library_mac.ensure_audio()
     tracks = library_mac.TRACKS
     print("ready.")
-    if SELFTEST:
-        return _run_selftest(tracks)
+    if SELFTEST or DUMP_DIR:
+        return _run_selftest(tracks, DUMP_DIR)
     print("controls: ↑/↓ wheel · Enter/Space select · → right · ← left · "
           "Backspace back · Esc quit")
     print("Haptic events print here:")

@@ -111,4 +111,4 @@ def test_view_window_and_scroll(tracks):
         ctrl.scroll_down()
     v = ctrl.view()
     assert v.total == 6 and len(v.items) == 5
-    assert v.scroll == 1 and v.cursor == 4   # cursor pinned to the last row
+    assert v.window_start == 1 and v.cursor == 4  # cursor pinned to the last row

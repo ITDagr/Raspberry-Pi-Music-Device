@@ -364,6 +364,10 @@ class App:
                     self._status)
         self.dimmer.start()
         self._restore_state()
+        # forced initial frame: never wait for the first input to draw the menu
+        self._render(surface)
+        self.display.push_frame(surface)
+        self.needs_redraw = False
         clock = pygame.time.Clock()
 
         while True:

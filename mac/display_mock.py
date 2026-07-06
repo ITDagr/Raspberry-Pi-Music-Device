@@ -21,6 +21,11 @@ class MockDisplay:
         self._overlay = pygame.Surface((side, side))  # black
 
     def push_frame(self, surface: pygame.Surface) -> None:
+        # macOS never maps/presents an SDL window unless events are serviced;
+        # pump on every flip so frames pushed before the main loop's first
+        # event.get() (boot animation, initial menu) actually reach the screen.
+        # pump() does not drain the queue, so MockANOInput still sees keys.
+        pygame.event.pump()
         pygame.transform.scale(surface, self.window.get_size(), self.window)
         if self.level < 0.99:
             self._overlay.set_alpha(int((1 - self.level ** 0.5) * 255))

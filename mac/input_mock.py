@@ -22,6 +22,9 @@ _KEYMAP = {
 }
 
 
+_EXPOSE_EVENTS = {pygame.WINDOWEXPOSED, pygame.WINDOWSHOWN, pygame.WINDOWRESTORED}
+
+
 class MockANOInput:
     def __init__(self) -> None:
         self.quit_requested = False
@@ -37,4 +40,8 @@ class MockANOInput:
                 if ev == "quit":
                     self.quit_requested = True
                 events.append(ev)
+            elif e.type in _EXPOSE_EVENTS:
+                # the OS (re)showed the window: force a redraw so it isn't
+                # blank; mode handlers ignore the unknown event string
+                events.append("expose")
         return events

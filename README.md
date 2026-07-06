@@ -141,3 +141,11 @@ Decisions made where the spec left room:
 14. **Dimmer transitions always print** (per §6); all other chatty prints sit
     behind `config.DEBUG`.
 15. **Verification ran on Python 3.12** (uv-managed venv); code targets ≥3.10.
+16. **Blank-menu root cause (fixed):** drawing was always correct (headless
+    captures proved it), but on macOS SDL never maps/presents a window unless
+    its event queue is pumped — the boot animation and the single initial menu
+    frame were all flipped before the main loop's first `pygame.event.get()`,
+    and dirty-flag rendering then went idle, so the window stayed blank.
+    `MockDisplay.push_frame` now pumps events on every flip, window-expose
+    events force a redraw, and the app pushes a forced initial frame after
+    boot. `tests/test_render.py` and `--dump-frames` guard the drawing path.
