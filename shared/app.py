@@ -340,10 +340,12 @@ class App:
     def _render(self, surface) -> None:
         st = self._status()
         if self.mode is Mode.MENU:
-            self.renderer.draw(surface, self.ctrl.view(), st)
+            self.renderer.draw(surface, self.ctrl.view(), st,
+                               playing=self.player.playing)
         elif self.mode is Mode.NOWPLAYING:
             self.renderer.draw_nowplaying(surface, self.player.track, self.player.elapsed,
-                                          self.player.playing, self.player.volume, st)
+                                          self.player.playing, self.player.volume, st,
+                                          shuffle=self.shuffle)
         elif self.mode is Mode.BLUETOOTH:
             self.renderer.draw_bluetooth(surface, self.bt_devices, self.bt_cursor,
                                          self.bt_connect_info, st)

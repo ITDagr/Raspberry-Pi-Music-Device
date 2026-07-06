@@ -41,6 +41,7 @@ class MenuView:
     cursor: int        # index within the visible window
     window_start: int  # first visible row's absolute index
     total: int
+    chevrons: tuple[bool, ...] = ()  # per visible row: descends into a submenu
 
 
 @dataclass
@@ -111,17 +112,17 @@ class MenuController:
         menu = self.menus[self._frame.name]
         f = self._frame
         visible = config.MENU_VISIBLE
-        if f.cursor < f.scroll:
-            f.scroll = f.cursor
-        elif f.cursor >= f.scroll + visible:
-            f.scroll = f.cursor - visible + 1
-        window = menu.items[f.scroll : f.scroll + visible]
+        # v1-style windowing: keep the cursor centered where possible
+        start = max(0, min(f.cursor - visible // 2, len(menu.items) - visible))
+        f.scroll = start
+        window = menu.items[start : start + visible]
         return MenuView(
             title=menu.title,
             items=[i.label for i in window],
-            cursor=f.cursor - f.scroll,
-            window_start=f.scroll,
+            cursor=f.cursor - start,
+            window_start=start,
             total=len(menu.items),
+            chevrons=tuple(i.action.startswith("menu:") for i in window),
         )
 
 

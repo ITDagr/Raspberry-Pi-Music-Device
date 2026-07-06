@@ -1,49 +1,79 @@
-"""device v2 — all drawing for the 240x240 screen.
+"""device v2 — all drawing for the 240x240 screen (v1 "DETENT" visual system).
 
-Pure pygame.font + pygame.draw so it renders identically in the Mac window
-and under SDL_VIDEODRIVER=dummy on the Pi. Dark theme, ~26 px status header
-(clock left, battery right) on every screen.
+Ported from v1's shared/screen.py: same tokens, grid, and layouts, adapted to
+v2's MenuView dataclass and Display protocol. Fonts are pygame's bundled
+Font(None, ...) — never SysFont, which is unreliable across machines and
+headless — so glyphs the bundled font lacks (check mark, sun) are drawn with
+primitives.
+
+DETENT tokens (@ SIZE=240):
+  Colors    base #0E0F13  surface #1B1E26  line #2A2E38
+            text #F2F3F5  dim #8A8F9C
+            accent #FF6A3D  (focus / active progress — FOCUS ONLY)
+            state  #5BD6A6  (connected / playing / battery-ok — STATUS ONLY)
+  Grid      margin 12 · status-bar 24 · row 38 (pill 32, r 10) · card r 18
 """
 from __future__ import annotations
 
-import math
-import time
+from typing import Optional
 
 import pygame
 
+from shared.hardware import Track
 from shared.menu_core import MenuView
 
 SIZE = 240
-HEADER_H = 26
-LIST_Y0 = 66   # first menu row baseline
-ROW_H = 33     # menu row pitch
 
-# The palette: every draw call uses one of these names, nothing ad hoc.
-BG = (16, 16, 20)
-FG = (235, 235, 240)
-MUTED = (140, 140, 155)
-DIM = (90, 90, 105)
-ACCENT = (120, 190, 255)
-HIGHLIGHT_BG = (44, 48, 66)     # cursor pill
-HIGHLIGHT_FG = (255, 255, 255)  # cursor row text
-BAR_BG = (50, 52, 64)
-GREEN = (120, 220, 140)
+# --- tokens -------------------------------------------------------------------
+C_BASE = (14, 15, 19)      # #0E0F13  screen background
+C_SURFACE = (27, 30, 38)   # #1B1E26  selection pill / cards
+C_LINE = (42, 46, 56)      # #2A2E38  hairlines, inactive track
+C_TEXT = (242, 243, 245)   # #F2F3F5  primary text
+C_DIM = (138, 143, 156)    # #8A8F9C  secondary / labels
+C_ACCENT = (255, 106, 61)  # #FF6A3D  focus / active progress
+C_STATE = (91, 214, 166)   # #5BD6A6  positive status
 
-_FONT_SIZES = (15, 16, 17, 18, 19, 20, 22, 24, 44, 64)
+# Semantic aliases — every draw call uses one of these names, nothing ad hoc.
+BG = C_BASE
+FG = C_TEXT
+MUTED = C_DIM
+ACCENT = C_ACCENT
+HIGHLIGHT_BG = C_SURFACE    # cursor pill
+HIGHLIGHT_FG = C_TEXT       # cursor row text
+GREEN = C_STATE
+
+# Grid
+MARGIN = 12
+STATUSH = 24
+ROW_H = 38
+PILL_H = 32
+PILL_R = 10
+CARD_R = 18
+LIST_Y0 = STATUSH + 20      # first row of a titled (non-root) list
 
 ABOUT_FEATURES = [
-    "device v2.0",
-    "one core, two targets",
-    "240x240 ST7789 IPS",
-    "ANO wheel + 5 keys",
-    "DRV2605L haptics",
-    "MPD / pygame audio",
-    "Bluetooth sinks",
-    "PiSugar battery + RTC",
-    "auto dim + sleep",
-    "resume on boot",
+    "Now Playing screen",
+    "Artist / Album browsing",
+    "Shuffle mode",
+    "Context-aware track advance",
+    "Bluetooth audio",
+    "Haptic feedback",
+    "Boot animation",
+    "Battery percentage (PiSugar)",
+    "Live clock (RTC)",
+    "Screen dimmer + sleep",
+    "Persistent playback state",
+    "Encoder acceleration",
+    "Volume overlay",
+    "Scroll wheel navigation",
 ]
-ABOUT_VISIBLE = 5
+ABOUT_VISIBLE = 4
+
+_FONT_SPECS = [(s, False) for s in (10, 11, 12, 13, 14, 16, 17, 18, 22, 28, 36, 38)]
+_FONT_SPECS += [(s, True) for s in (10, 11, 12, 13, 17, 18, 22, 28, 36, 38)]
+# Sizes in this file are v1's Arial point sizes; the bundled font renders
+# ~1.38x smaller at the same nominal size (measured), so scale on creation.
+_FONT_SCALE = 1.38
 
 
 def _mss(seconds: float) -> str:
@@ -55,183 +85,363 @@ class ScreenRenderer:
     def __init__(self) -> None:
         if not pygame.font.get_init():
             pygame.font.init()
-        # Cache pygame's bundled font (never SysFont) once, up front; a broken
-        # font install must fail loudly, not render invisible screens.
+        # Cache the bundled font once, up front; a broken font install must
+        # fail loudly, not render invisible screens.
         try:
-            self._fonts: dict[int, pygame.font.Font] = {
-                size: pygame.font.Font(None, size) for size in _FONT_SIZES
-            }
+            self._fonts: dict[tuple[int, bool], pygame.font.Font] = {}
+            for size, bold in _FONT_SPECS:
+                self._font(size, bold)
         except (pygame.error, OSError) as e:
             raise RuntimeError(f"renderer: cannot create fonts ({e})") from e
 
     # --- primitives -----------------------------------------------------------
-    def _font(self, size: int) -> pygame.font.Font:
-        if size not in self._fonts:
-            self._fonts[size] = pygame.font.Font(None, size)
-        return self._fonts[size]
+    def _font(self, size: int, bold: bool = False) -> pygame.font.Font:
+        key = (size, bold)
+        if key not in self._fonts:
+            f = pygame.font.Font(None, max(8, round(size * _FONT_SCALE)))
+            f.set_bold(bold)
+            self._fonts[key] = f
+        return self._fonts[key]
 
-    def _text(self, surf, txt, size, color, x, y, align="left"):
-        img = self._font(size).render(txt, True, color)
-        if align == "right":
-            x -= img.get_width()
-        elif align == "center":
-            x -= img.get_width() // 2
-        surf.blit(img, (x, y))
-        return img.get_rect(topleft=(x, y))
+    def _mono(self, size: int) -> pygame.font.Font:
+        # v1 used Courier here; the bundled font stands in (see module docstring)
+        return self._font(size)
 
-    def _fit(self, txt: str, size: int, max_w: int) -> str:
-        font = self._font(size)
-        if font.size(txt)[0] <= max_w:
-            return txt
-        while txt and font.size(txt + "...")[0] > max_w:
-            txt = txt[:-1]
-        return txt + "..."
+    def _render(self, surf, text, font: pygame.font.Font, color, x: int, y: int,
+                anchor: str = "topleft") -> None:
+        img = font.render(str(text), True, color)
+        r = img.get_rect()
+        setattr(r, anchor, (x, y))
+        surf.blit(img, r)
 
-    def _header(self, surf, status: dict) -> None:
-        self._text(surf, status.get("clock", "--:--"), 18, MUTED, 10, 6)
-        batt = status.get("battery")
-        # battery glyph: body + nub + proportional fill
-        bx, by, bw, bh = SIZE - 30, 8, 20, 11
-        pygame.draw.rect(surf, MUTED, (bx, by, bw, bh), 1, border_radius=2)
-        pygame.draw.rect(surf, MUTED, (bx + bw, by + 3, 2, bh - 6))
-        if batt is not None:
-            fill = max(1, round((bw - 4) * min(100, max(0, batt)) / 100))
-            color = GREEN if batt > 20 else (240, 120, 110)
-            pygame.draw.rect(surf, color, (bx + 2, by + 2, fill, bh - 4))
-        label = f"{batt}%" if batt is not None else "--"
-        self._text(surf, label, 18, MUTED, bx - 6, 6, align="right")
-        pygame.draw.line(surf, (36, 36, 46), (0, HEADER_H), (SIZE, HEADER_H))
+    def _fit(self, text: str, font: pygame.font.Font, max_w: int) -> str:
+        if font.size(text)[0] <= max_w:
+            return text
+        while text and font.size(text + "…")[0] > max_w:
+            text = text[:-1]
+        return text + "…"
 
-    def _scrollbar(self, surf, y0: int, h: int, total: int, visible: int, scroll: int):
-        if total <= visible:
-            return
-        pygame.draw.rect(surf, BAR_BG, (SIZE - 6, y0, 3, h), border_radius=2)
-        th = max(12, h * visible // total)
-        ty = y0 + (h - th) * scroll // max(1, total - visible)
-        pygame.draw.rect(surf, MUTED, (SIZE - 6, ty, 3, th), border_radius=2)
+    def _check(self, surf, cx: int, cy: int, color) -> None:
+        pygame.draw.lines(surf, color, False,
+                          [(cx - 6, cy), (cx - 2, cy + 4), (cx + 6, cy - 5)], 2)
 
-    def _big_bar_screen(self, surf, status, title, big, pct, note=""):
-        """Shared layout for the battery and brightness screens."""
-        surf.fill(BG)
-        self._header(surf, status)
-        self._text(surf, title, 22, ACCENT, SIZE // 2, 40, align="center")
-        self._text(surf, big, 64, FG, SIZE // 2, 84, align="center")
-        bx, bw = 40, SIZE - 80
-        pygame.draw.rect(surf, BAR_BG, (bx, 150, bw, 14), border_radius=7)
-        if pct is not None:
-            fill = round(bw * min(100, max(0, pct)) / 100)
-            pygame.draw.rect(surf, ACCENT, (bx, 150, max(6, fill), 14), border_radius=7)
-        if note:
-            self._text(surf, note, 17, MUTED, SIZE // 2, 178, align="center")
+    def _sun(self, surf, cx: int, cy: int, color) -> None:
+        pygame.draw.circle(surf, color, (cx, cy), 7)
+        for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1), (1, 1), (1, -1),
+                       (-1, 1), (-1, -1)):
+            n = 1.414 if dx and dy else 1.0
+            pygame.draw.line(surf, color,
+                             (cx + int(10 * dx / n), cy + int(10 * dy / n)),
+                             (cx + int(14 * dx / n), cy + int(14 * dy / n)), 2)
+
+    # --- shared components ---------------------------------------------------
+    def _status_bar(self, surf, status: dict, playing: bool = False) -> None:
+        """Top 24px: clock left, equalizer glyph center while playing, battery right."""
+        pygame.draw.rect(surf, C_BASE, (0, 0, SIZE, STATUSH))
+        pygame.draw.line(surf, C_LINE, (0, STATUSH), (SIZE, STATUSH))
+
+        clock_str = status.get("clock", "")
+        if clock_str:
+            self._render(surf, clock_str, self._mono(11), C_DIM,
+                         MARGIN, STATUSH // 2, "midleft")
+
+        if playing:
+            bar_w, gap = 3, 2
+            bx = SIZE // 2 - (4 * bar_w + 3 * gap) // 2
+            for i, h in enumerate((8, 12, 9, 14)):
+                pygame.draw.rect(surf, C_STATE,
+                                 (bx + i * (bar_w + gap), STATUSH // 2 - h // 2, bar_w, h),
+                                 border_radius=1)
+
+        bat = status.get("battery")
+        if bat is not None:
+            frac = max(0.0, min(1.0, bat / 100.0))
+            bat_color = C_STATE if bat > 20 else C_ACCENT
+            bw, bh = 26, 12
+            bx = SIZE - MARGIN - bw - 4
+            by = (STATUSH - bh) // 2
+            pygame.draw.rect(surf, C_LINE, (bx, by, bw, bh), border_radius=3)
+            pygame.draw.rect(surf, bat_color,
+                             (bx + 2, by + 2, max(2, int((bw - 4) * frac)), bh - 4),
+                             border_radius=2)
+            pygame.draw.rect(surf, C_LINE, (bx + bw, by + 3, 3, bh - 6), border_radius=1)
+            bat_str = f"{bat}%"
+            fw = self._mono(10).size(bat_str)[0]
+            self._render(surf, bat_str, self._mono(10), C_DIM,
+                         bx - fw - 4, STATUSH // 2, "midleft")
+
+    def _list_row(self, surf, y: int, label: str, selected: bool,
+                  chevron: bool = False, glyph: str = "", right_label: str = "",
+                  right_color=None) -> None:
+        """One 38px list row: surface pill + 3px accent left edge when selected."""
+        px, pw = MARGIN, SIZE - MARGIN * 2
+        if selected:
+            pill_y = y + (ROW_H - PILL_H) // 2
+            pygame.draw.rect(surf, C_SURFACE, (px, pill_y, pw, PILL_H),
+                             border_radius=PILL_R)
+            pygame.draw.rect(surf, C_ACCENT, (px, pill_y, 3, PILL_H), border_radius=2)
+        cy = y + ROW_H // 2
+        text_x = px + 16
+        if glyph:
+            fg = self._font(13)
+            self._render(surf, glyph, fg, C_ACCENT if selected else C_DIM,
+                         text_x, cy, "midleft")
+            text_x += fg.size(glyph)[0] + 6
+        label_font = self._font(17, bold=selected)
+        self._render(surf, self._fit(label, label_font, SIZE - MARGIN - text_x - 32),
+                     label_font, C_TEXT, text_x, cy, "midleft")
+        right_x = SIZE - MARGIN - 6
+        if right_label:
+            self._render(surf, right_label, self._font(12), right_color or C_DIM,
+                         right_x, cy, "midright")
+        elif chevron and selected:
+            self._render(surf, "›", self._font(18, bold=True), C_ACCENT,
+                         right_x, cy, "midright")
+        elif chevron:
+            self._render(surf, "›", self._font(16), C_DIM, right_x, cy, "midright")
+
+    def _slider(self, surf, x: int, y: int, w: int, frac: float,
+                knob: bool = True, height: int = 4) -> None:
+        """Horizontal slider: inactive track -> accent fill -> optional knob."""
+        frac = max(0.0, min(1.0, frac))
+        fill_w = int(w * frac)
+        pygame.draw.rect(surf, C_LINE, (x, y, w, height), border_radius=height // 2)
+        if fill_w > 0:
+            pygame.draw.rect(surf, C_ACCENT, (x, y, fill_w, height),
+                             border_radius=height // 2)
+        if knob:
+            kx, ky = x + fill_w, y + height // 2
+            pygame.draw.circle(surf, C_TEXT, (kx, ky), 6)
+            pygame.draw.circle(surf, C_ACCENT, (kx, ky), 4)
+
+    def _scroll_rail(self, surf, top: int, height: int,
+                     frac_start: float, frac_len: float) -> None:
+        rx, rw = SIZE - 4, 2
+        pygame.draw.rect(surf, C_LINE, (rx, top, rw, height), border_radius=1)
+        thumb_y = top + int(height * frac_start)
+        thumb_h = max(12, int(height * frac_len))
+        pygame.draw.rect(surf, C_DIM, (rx, thumb_y, rw, thumb_h), border_radius=1)
 
     # --- screens ---------------------------------------------------------------
-    def draw(self, surface, view: MenuView, status: dict) -> None:
-        """Menu screen: title, up to 5 rows, pill cursor, scrollbar on overflow."""
-        surface.fill(BG)
-        self._header(surface, status)
-        self._text(surface, view.title, 24, ACCENT, 12, 34)
+    def draw(self, surface, view: MenuView, status: dict,
+             playing: bool = False) -> None:
+        """Menu / library list."""
+        surface.fill(C_BASE)
+        self._status_bar(surface, status, playing)
+        is_root = view.title == "device"  # the home menu ≙ v1's untitled root
+        if not is_root:
+            self._render(surface, view.title.upper(), self._font(10, bold=True),
+                         C_DIM, MARGIN, STATUSH + 6, "topleft")
+        content_top = STATUSH + (20 if not is_root else 4)
+        y = content_top
         for i, label in enumerate(view.items):
-            y = LIST_Y0 + i * ROW_H
-            if i == view.cursor:
-                pygame.draw.rect(surface, HIGHLIGHT_BG,
-                                 (6, y - 3, SIZE - 18, ROW_H - 4), border_radius=13)
-            color = HIGHLIGHT_FG if i == view.cursor else FG
-            self._text(surface, self._fit(label, 22, SIZE - 40), 22, color, 18, y + 2)
-        self._scrollbar(surface, LIST_Y0, 5 * ROW_H - 8,
-                        view.total, len(view.items), view.window_start)
+            if y >= SIZE:
+                break
+            chevron = view.chevrons[i] if i < len(view.chevrons) else False
+            self._list_row(surface, y, label, i == view.cursor, chevron=chevron)
+            y += ROW_H
+        if view.total > len(view.items):
+            frac_start = view.window_start / max(1, view.total - len(view.items))
+            self._scroll_rail(surface, content_top, SIZE - content_top - MARGIN,
+                              frac_start, len(view.items) / view.total)
 
-    def draw_nowplaying(self, surface, track, elapsed, playing, volume, status) -> None:
-        surface.fill(BG)
-        self._header(surface, status)
+    def draw_nowplaying(self, surface, track: Optional[Track], elapsed: float,
+                        playing: bool, volume: int, status: dict,
+                        shuffle: bool = False) -> None:
+        surface.fill(C_BASE)
+        self._status_bar(surface, status, playing)
         if track is None:
-            self._text(surface, "Nothing playing", 22, MUTED, SIZE // 2, 100, align="center")
-            self._text(surface, "pick a song in Music", 17, DIM, SIZE // 2, 128, align="center")
+            self._render(surface, "Nothing playing", self._font(17, bold=True),
+                         C_TEXT, SIZE // 2, SIZE // 2 - 10, "midtop")
+            self._render(surface, "pick a song in Music", self._font(11), C_DIM,
+                         SIZE // 2, SIZE // 2 + 16, "midtop")
             return
-        self._text(surface, self._fit(track.title, 24, SIZE - 30), 24, FG, 15, 44)
-        self._text(surface, self._fit(track.artist, 19, SIZE - 30), 19, MUTED, 15, 72)
-        self._text(surface, self._fit(track.album, 16, SIZE - 30), 16, DIM, 15, 94)
-        # progress bar + times
-        bx, bw, by = 20, SIZE - 40, 132
-        pygame.draw.rect(surface, BAR_BG, (bx, by, bw, 6), border_radius=3)
-        if track.duration > 0:
-            fill = round(bw * min(1.0, elapsed / track.duration))
-            pygame.draw.rect(surface, ACCENT, (bx, by, max(3, fill), 6), border_radius=3)
-        self._text(surface, _mss(elapsed), 15, MUTED, bx, by + 12)
-        self._text(surface, _mss(track.duration), 15, MUTED, bx + bw, by + 12, align="right")
-        # play / pause glyph
-        cx, cy = SIZE // 2, 185
+
+        self._render(surface, "NOW PLAYING", self._font(10, bold=True), C_ACCENT,
+                     MARGIN, STATUSH + 8, "topleft")
+
+        # Track title, wrapped to at most 2 lines
+        f_title = self._font(22, bold=True)
+        lines: list[str] = []
+        current: list[str] = []
+        for word in track.title.split():
+            test = " ".join(current + [word])
+            if f_title.size(test)[0] > SIZE - MARGIN * 2 and current:
+                lines.append(" ".join(current))
+                current = [word]
+            else:
+                current.append(word)
+        if current:
+            lines.append(" ".join(current))
+        ty = STATUSH + 28
+        for line in lines[:2]:
+            self._render(surface, line, f_title, C_TEXT, MARGIN, ty, "topleft")
+            ty += f_title.get_linesize() + 2
+        self._render(surface, track.artist, self._font(14), C_DIM,
+                     MARGIN, ty + 4, "topleft")
+
+        # Progress bar + knob
+        prog_y, bar_h = 156, 4
+        prog_w = SIZE - MARGIN * 2
+        frac = elapsed / max(1.0, track.duration)
+        pygame.draw.rect(surface, C_LINE, (MARGIN, prog_y, prog_w, bar_h),
+                         border_radius=bar_h // 2)
+        fill_w = max(0, min(prog_w, int(prog_w * frac)))
+        if fill_w:
+            pygame.draw.rect(surface, C_ACCENT, (MARGIN, prog_y, fill_w, bar_h),
+                             border_radius=bar_h // 2)
+        kx, ky = MARGIN + fill_w, prog_y + bar_h // 2
+        pygame.draw.circle(surface, C_TEXT, (kx, ky), 6)
+        pygame.draw.circle(surface, C_ACCENT, (kx, ky), 4)
+
+        f_tc = self._mono(11)
+        self._render(surface, _mss(elapsed), f_tc, C_DIM,
+                     MARGIN, prog_y + bar_h + 6, "topleft")
+        self._render(surface, f"-{_mss(track.duration - elapsed)}", f_tc, C_DIM,
+                     SIZE - MARGIN, prog_y + bar_h + 6, "topright")
+
+        # Transport row: shuffle label - play/pause - volume
+        cy = 192 + 14
+        shuf_color = C_STATE if shuffle else C_DIM
+        self._render(surface, "shuf", self._font(11, bold=shuffle), shuf_color,
+                     MARGIN + 22, cy, "midleft")
+        cx = SIZE // 2
         if playing:
-            pygame.draw.rect(surface, FG, (cx - 10, cy - 12, 7, 24), border_radius=2)
-            pygame.draw.rect(surface, FG, (cx + 3, cy - 12, 7, 24), border_radius=2)
+            pygame.draw.rect(surface, C_TEXT, (cx - 10, cy - 10, 5, 20))
+            pygame.draw.rect(surface, C_TEXT, (cx + 5, cy - 10, 5, 20))
         else:
-            pygame.draw.polygon(surface, FG, [(cx - 8, cy - 13), (cx - 8, cy + 13), (cx + 12, cy)])
-        self._text(surface, f"vol {volume}", 15, DIM, SIZE - 12, SIZE - 22, align="right")
+            pygame.draw.polygon(surface, C_TEXT,
+                                [(cx - 8, cy - 10), (cx - 8, cy + 10), (cx + 12, cy)])
+        vol_num = str(volume)
+        f_vol = self._mono(11)
+        num_w = f_vol.size(vol_num)[0]
+        bar_w = 32
+        left_x = SIZE - MARGIN - (num_w + 5 + bar_w)
+        self._render(surface, vol_num, f_vol, C_DIM, left_x, cy, "midleft")
+        self._slider(surface, left_x + num_w + 5, cy - 2, bar_w, volume / 100,
+                     knob=False, height=3)
 
     def draw_volume_overlay(self, surface, volume: int) -> None:
-        panel = pygame.Surface((170, 96), pygame.SRCALPHA)
-        pygame.draw.rect(panel, (28, 30, 42, 232), panel.get_rect(), border_radius=16)
-        f = self._font(15).render("VOLUME", True, MUTED)
-        panel.blit(f, ((170 - f.get_width()) // 2, 10))
-        n = self._font(44).render(str(volume), True, FG)
-        panel.blit(n, ((170 - n.get_width()) // 2, 26))
-        pygame.draw.rect(panel, BAR_BG, (20, 74, 130, 8), border_radius=4)
-        pygame.draw.rect(panel, ACCENT, (20, 74, max(4, round(130 * volume / 100)), 8),
-                         border_radius=4)
-        surface.blit(panel, ((SIZE - 170) // 2, (SIZE - 96) // 2))
+        """Transient volume overlay: dim underlay + centered card."""
+        dim = pygame.Surface((SIZE, SIZE), pygame.SRCALPHA)
+        dim.fill((*C_BASE, 200))
+        surface.blit(dim, (0, 0))
+        cw, ch = 160, 100
+        cx, cy = (SIZE - cw) // 2, (SIZE - ch) // 2
+        pygame.draw.rect(surface, C_SURFACE, (cx, cy, cw, ch), border_radius=CARD_R)
+        self._render(surface, "VOLUME", self._font(10, bold=True), C_DIM,
+                     SIZE // 2, cy + 14, "midtop")
+        self._render(surface, str(volume), self._font(36, bold=True), C_TEXT,
+                     SIZE // 2, cy + 32, "midtop")
+        self._slider(surface, cx + 16, cy + 78, cw - 32, volume / 100,
+                     knob=True, height=4)
 
-    def draw_bluetooth(self, surface, devices, cursor, connect_info, status) -> None:
-        surface.fill(BG)
-        self._header(surface, status)
-        self._text(surface, "Bluetooth", 24, ACCENT, 12, 34)
-        if connect_info:
-            name = self._fit(connect_info["name"], 22, SIZE - 40)
-            if connect_info["state"] == "connecting":
-                # spinner: rotating arc
-                a = (time.monotonic() * 5.0) % (2 * math.pi)
-                pygame.draw.arc(surface, ACCENT, (SIZE // 2 - 18, 96, 36, 36),
-                                a, a + 4.4, 3)
-                self._text(surface, name, 22, FG, SIZE // 2, 148, align="center")
-                self._text(surface, "connecting...", 17, MUTED, SIZE // 2, 176, align="center")
-            else:
-                cx, cy = SIZE // 2, 112
-                pygame.draw.lines(surface, GREEN, False,
-                                  [(cx - 12, cy), (cx - 4, cy + 9), (cx + 13, cy - 10)], 4)
-                self._text(surface, name, 22, FG, SIZE // 2, 148, align="center")
-                self._text(surface, "connected", 17, GREEN, SIZE // 2, 176, align="center")
-            return
+    def draw_bluetooth(self, surface, devices: list, cursor: int,
+                       connect_info: Optional[dict], status: dict) -> None:
+        surface.fill(C_BASE)
+        self._status_bar(surface, status)
+        self._render(surface, "BLUETOOTH", self._font(10, bold=True), C_DIM,
+                     MARGIN, STATUSH + 6, "topleft")
         if not devices:
-            self._text(surface, "No devices found", 20, MUTED, SIZE // 2, 110, align="center")
-            self._text(surface, "back to rescan", 16, DIM, SIZE // 2, 136, align="center")
+            self._render(surface, "No devices found", self._font(17, bold=True),
+                         C_TEXT, SIZE // 2, SIZE // 2 - 10, "midtop")
+            self._render(surface, "back to rescan", self._font(11), C_DIM,
+                         SIZE // 2, SIZE // 2 + 16, "midtop")
             return
-        scroll = max(0, min(cursor - 4, len(devices) - 5))
-        for i, dev in enumerate(devices[scroll : scroll + 5]):
-            y = LIST_Y0 + i * ROW_H
-            selected = scroll + i == cursor
-            if selected:
-                pygame.draw.rect(surface, HIGHLIGHT_BG,
-                                 (6, y - 3, SIZE - 18, ROW_H - 4), border_radius=13)
-            self._text(surface, self._fit(dev["name"], 22, SIZE - 40), 22,
-                       HIGHLIGHT_FG if selected else FG, 18, y + 2)
-        self._scrollbar(surface, LIST_Y0, 5 * ROW_H - 8, len(devices), 5, scroll)
+        connecting_addr = connected_addr = ""
+        if connect_info:
+            if connect_info["state"] == "connecting":
+                connecting_addr = connect_info.get("address", "")
+            else:
+                connected_addr = connect_info.get("address", "")
+
+        top = STATUSH + 26
+        visible = (SIZE - top) // ROW_H
+        start = max(0, min(cursor - visible // 2, len(devices) - visible))
+        y = top
+        for i, dev in enumerate(devices[start : start + visible]):
+            addr = dev.get("address", "")
+            right, right_color = "", None
+            if addr == connecting_addr:
+                right, right_color = "…", C_ACCENT
+            self._list_row(surface, y, dev.get("name", addr), start + i == cursor,
+                           glyph="B", right_label=right, right_color=right_color)
+            if addr == connected_addr:
+                self._check(surface, SIZE - MARGIN - 12, y + ROW_H // 2, C_STATE)
+            y += ROW_H
+        if len(devices) > visible:
+            self._scroll_rail(surface, top, SIZE - top - MARGIN,
+                              start / max(1, len(devices) - visible),
+                              visible / len(devices))
 
     def draw_battery_screen(self, surface, status: dict) -> None:
-        batt = status.get("battery")
-        charging = status.get("charging")
-        note = "charging" if charging else ("on battery" if charging is False else "")
-        big = f"{batt}%" if batt is not None else "--"
-        self._big_bar_screen(surface, status, "Battery", big, batt, note)
+        surface.fill(C_BASE)
+        self._status_bar(surface, status)
+        self._render(surface, "BATTERY", self._font(10, bold=True), C_DIM,
+                     MARGIN, STATUSH + 6, "topleft")
+        battery = status.get("battery")
+        cy = SIZE // 2
+        bat_color = C_STATE if (battery or 0) > 20 else C_ACCENT
+
+        bw, bh = 80, 40
+        bx, by = (SIZE - bw) // 2, cy - 50
+        pygame.draw.rect(surface, C_LINE, (bx, by, bw, bh), border_radius=6, width=3)
+        pygame.draw.rect(surface, C_LINE, (bx + bw, by + 12, 6, 16), border_radius=2)
+        if battery is not None:
+            fill_w = max(4, int((bw - 8) * battery / 100))
+            pygame.draw.rect(surface, bat_color, (bx + 4, by + 6, fill_w, bh - 12),
+                             border_radius=4)
+        label = f"{battery}%" if battery is not None else "--"
+        self._render(surface, label, self._font(28, bold=True), C_TEXT,
+                     SIZE // 2, cy - 2, "midtop")
+        if battery is None:
+            caption = "No battery data"
+        elif status.get("charging"):
+            caption = "Charging"
+        elif battery > 20:
+            caption = "Battery good"
+        elif battery > 10:
+            caption = "Battery low"
+        else:
+            caption = "Charge soon"
+        self._render(surface, caption, self._font(13), C_DIM,
+                     SIZE // 2, cy + 36, "midtop")
 
     def draw_brightness_screen(self, surface, pct: int, status: dict) -> None:
-        self._big_bar_screen(surface, status, "Brightness", f"{pct}%", pct,
-                             "wheel adjusts - press to exit")
+        surface.fill(C_BASE)
+        self._status_bar(surface, status)
+        self._render(surface, "BRIGHTNESS", self._font(10, bold=True), C_DIM,
+                     MARGIN, STATUSH + 6, "topleft")
+        cy = SIZE // 2
+        self._sun(surface, SIZE // 2, cy - 22, C_ACCENT)
+        self._render(surface, f"{pct}%", self._font(22, bold=True), C_TEXT,
+                     SIZE // 2, cy - 2, "midtop")
+        self._slider(surface, MARGIN * 2, cy + 36, SIZE - MARGIN * 4, pct / 100,
+                     knob=True, height=6)
+        self._render(surface, "Rotate wheel to adjust", self._font(11), C_DIM,
+                     SIZE // 2, cy + 60, "midtop")
 
     def draw_about_screen(self, surface, scroll: int, status: dict) -> None:
-        surface.fill(BG)
-        self._header(surface, status)
-        self._text(surface, "About", 24, ACCENT, 12, 34)
-        y0, row_h = 68, 31
-        for i, line in enumerate(ABOUT_FEATURES[scroll : scroll + ABOUT_VISIBLE]):
-            color = ACCENT if scroll + i == 0 else MUTED
-            self._text(surface, self._fit(line, 20, SIZE - 40), 20, color, 18, y0 + i * row_h)
-        self._scrollbar(surface, y0, ABOUT_VISIBLE * row_h - 8,
-                        len(ABOUT_FEATURES), ABOUT_VISIBLE, scroll)
+        surface.fill(C_BASE)
+        self._status_bar(surface, status)
+        self._render(surface, "ABOUT", self._font(10, bold=True), C_DIM,
+                     MARGIN, STATUSH + 6, "topleft")
+        y = STATUSH + 26
+        self._render(surface, "device", self._font(18, bold=True), C_TEXT,
+                     MARGIN, y, "topleft")
+        y += 22
+        self._render(surface, "by Ian Dagerman  •  v2.0", self._font(11), C_DIM,
+                     MARGIN, y, "topleft")
+        y += 20
+        pygame.draw.line(surface, C_LINE, (MARGIN, y), (SIZE - MARGIN, y))
+        y += 8
+        total = len(ABOUT_FEATURES)
+        start = max(0, min(scroll, total - ABOUT_VISIBLE))
+        for feat in ABOUT_FEATURES[start : start + ABOUT_VISIBLE]:
+            self._render(surface, f"• {feat}", self._font(13), C_TEXT,
+                         MARGIN + 4, y, "topleft")
+            y += 22
+        if total > ABOUT_VISIBLE:
+            self._scroll_rail(surface, STATUSH + 68, SIZE - STATUSH - 68 - MARGIN,
+                              start / max(1, total - ABOUT_VISIBLE),
+                              ABOUT_VISIBLE / total)

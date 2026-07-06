@@ -88,4 +88,4 @@ BT_SCAN_S = 6.0                 # Pi: bluetoothctl scan window
 
 # --- ui -------------------------------------------------------------------------
 MENU_VISIBLE = 5                # menu rows on screen
-STARTUP_DURATION_S = 1.8        # boot animation length
+STARTUP_DURATION_S = 2.9        # total boot animation (v1 ARIA choreography, scaled)

@@ -141,7 +141,18 @@ Decisions made where the spec left room:
 14. **Dimmer transitions always print** (per §6); all other chatty prints sit
     behind `config.DEBUG`.
 15. **Verification ran on Python 3.12** (uv-managed venv); code targets ≥3.10.
-16. **Blank-menu root cause (fixed):** drawing was always correct (headless
+16. **v1 design port:** v2's visuals are v1's "DETENT" system (tokens, grid,
+    status bar with equalizer bars, pill rows with accent edge + chevrons,
+    knobbed sliders, scroll rails, ARIA boot choreography) adapted to v2's
+    MenuView/Display contracts. Deliberate deltas: fonts are pygame's bundled
+    `Font(None)` scaled 1.38× to match Arial's optical size (SysFont is banned
+    for headless reliability); v1's `✓`/`☀` glyphs — which render as tofu
+    boxes in v1 itself — are drawn with primitives; the battery indicator is
+    omitted when no PiSugar data exists (v1 behavior); bluetooth
+    connecting/connected are inline list markers ("…"/check) per v1, not a
+    dedicated card; the battery screen says "Charging" when PiSugar reports
+    it; ABOUT_VISIBLE is 4 with v1-style header + bullets.
+17. **Blank-menu root cause (fixed):** drawing was always correct (headless
     captures proved it), but on macOS SDL never maps/presents a window unless
     its event queue is pumped — the boot animation and the single initial menu
     frame were all flipped before the main loop's first `pygame.event.get()`,

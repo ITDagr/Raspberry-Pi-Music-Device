@@ -103,11 +103,15 @@ class SelfTestRunner:
         self._resume_at = 0.0
         self.done = False
 
-    def _snap(self, label: str, back: int = 1) -> None:
-        """Save the frame pushed `back` pushes ago (1 = most recent)."""
-        if self.dump_dir and self.display and len(self.display.frames) >= back:
+    def _snap(self, label: str, frame: pygame.Surface | None = None) -> None:
+        """Save `frame` (default: the most recently pushed frame) as a PNG."""
+        if not self.dump_dir:
+            return
+        if frame is None and self.display and self.display.frames:
+            frame = self.display.frames[-1]
+        if frame is not None:
             path = os.path.join(self.dump_dir, f"{label}.png")
-            pygame.image.save(self.display.frames[-back], path)
+            pygame.image.save(frame, path)
             print(f"frame: {path}")
 
     def __call__(self, application) -> None:
@@ -131,10 +135,9 @@ class SelfTestRunner:
             if not cond:
                 raise SelfTestError(msg)
 
-        # frames[-4] is the last boot-animation frame: startup pushes its final
-        # animation frame, then the first menu frame, then the app pushes the
-        # forced initial frame and the first loop frame (see shared/app.run)
-        self._snap("startup_final", back=4)
+        from shared import startup as startup_mod
+
+        self._snap("startup_final", startup_mod.last_hero_frame)
         self._snap("menu_home")
         press("select"); yield 0  # home -> Music
         expect(a.ctrl.current_name == "music", f"expected music menu, got {a.ctrl.current_name}")
@@ -213,7 +216,9 @@ class SelfTestRunner:
                     "brightness": 70}
         for key, want in expected.items():
             if data.get(key) != want:
-                raise SelfTestError(f"state[{key!r}] = {data.get(key)!r}, expected {want!r}")
+                raise SelfTestError(
+                    f"state[{key!r}] = {data.get(key)!r}, expected {want!r} "
+                    f"(full state: {data})")
         if data.get("context") != self.songs_ctx:
             raise SelfTestError("state context does not match the songs context")
 
