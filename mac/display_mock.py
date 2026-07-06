@@ -18,7 +18,7 @@ class MockDisplay:
         pygame.display.set_caption("prototype  —  device simulator")
         self.level = 1.0
         self._level_changed = False
-        self._overlay = pygame.Surface((side, side))  # black
+        self._overlay = pygame.Surface((side, side), depth=24)  # black, plain RGB
 
     def push_frame(self, surface: pygame.Surface) -> None:
         # macOS never maps/presents an SDL window unless events are serviced;
@@ -26,10 +26,13 @@ class MockDisplay:
         # event.get() (boot animation, initial menu) actually reach the screen.
         # pump() does not drain the queue, so MockANOInput still sees keys.
         pygame.event.pump()
-        pygame.transform.scale(surface, self.window.get_size(), self.window)
+        # Scale + dim on an RGB surface, then blit opaquely: alpha-format
+        # blits straight onto the cocoa display surface render as boxes.
+        scaled = pygame.transform.scale(surface, self.window.get_size())
         if self.level < 0.99:
             self._overlay.set_alpha(int((1 - self.level ** 0.5) * 255))
-            self.window.blit(self._overlay, (0, 0))
+            scaled.blit(self._overlay, (0, 0))
+        self.window.blit(scaled, (0, 0))
         pygame.display.flip()
 
     def set_backlight_level(self, level: float) -> None:

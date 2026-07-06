@@ -160,3 +160,13 @@ Decisions made where the spec left room:
     `MockDisplay.push_frame` now pumps events on every flip, window-expose
     events force a redraw, and the app pushes a forced initial frame after
     boot. `tests/test_render.py` and `--dump-frames` guard the drawing path.
+18. **"Black boxes over text" root cause (fixed):** a second macOS-only bug.
+    Under the cocoa driver, plain `pygame.Surface()` inherits the display
+    format, which carries an alpha mask — and SDL's blit of antialiased text
+    (or any per-pixel-alpha source) onto such a surface renders solid
+    color boxes instead of glyphs (reproduced on arm64 with both SDL 2.28
+    and 2.32; invisible under the dummy driver, whose surfaces are plain
+    RGB). All render canvases are now explicit `depth=24` RGB surfaces, and
+    MockDisplay composes scale + dim on an RGB surface before one opaque
+    blit to the window. Verified by reading back live window pixels under
+    the real cocoa driver.

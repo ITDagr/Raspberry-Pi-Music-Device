@@ -361,7 +361,10 @@ class App:
     # --- main loop ------------------------------------------------------------------
     def run(self) -> None:
         pisugar.start_polling()
-        surface = pygame.Surface((SIZE, SIZE))
+        # depth=24: a plain Surface inherits the display format, which on
+        # macOS carries an alpha channel that SDL's text/alpha blits mangle
+        # into solid boxes. An explicit RGB canvas sidesteps that entirely.
+        surface = pygame.Surface((SIZE, SIZE), depth=24)
         run_startup(surface, self.display, self.haptic, self.ctrl, self.renderer,
                     self._status)
         self.dimmer.start()

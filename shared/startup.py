@@ -126,7 +126,7 @@ def run_startup(surface, display, haptic, ctrl, renderer: ScreenRenderer,
     last_hero_frame = surface.copy()
 
     # Phase 4: crossfade to the first menu frame
-    menu_surf = pygame.Surface((SIZE, SIZE))
+    menu_surf = pygame.Surface((SIZE, SIZE), depth=24)  # RGB: see shared/app.run
     renderer.draw(menu_surf, ctrl.view(), status_fn())
     for t in _tick(0.6 * k, clock):
         e = _ease_out(t)

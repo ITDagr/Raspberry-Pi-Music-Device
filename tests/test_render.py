@@ -28,7 +28,7 @@ def renderer():
 
 
 def _surface() -> pygame.Surface:
-    return pygame.Surface((scr.SIZE, scr.SIZE))
+    return pygame.Surface((scr.SIZE, scr.SIZE), depth=24)  # matches app canvas
 
 
 def _frac_non_bg(surface) -> float:
