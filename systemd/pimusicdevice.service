@@ -1,13 +1,13 @@
 [Unit]
-Description=device v2 pocket music player
+Description=pimusicdevice — pocket music player
 After=network-online.target mpd.service bluetooth.service sound.target
 Wants=mpd.service
 
 [Service]
 Type=simple
 User=pi
-WorkingDirectory=/home/pi/device
-ExecStart=/usr/bin/python3 /home/pi/device/pi/device.py
+WorkingDirectory=/home/pi/pimusicdevice
+ExecStart=/usr/bin/python3 /home/pi/pimusicdevice/pi/device.py
 Restart=on-failure
 RestartSec=3
 Environment=PYTHONUNBUFFERED=1

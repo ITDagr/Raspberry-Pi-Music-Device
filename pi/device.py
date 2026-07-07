@@ -1,6 +1,6 @@
 """device v2 — Raspberry Pi launcher.
 
-Run it:      python3 pi/device.py     (or via systemd/device.service)
+Run it:      python3 pi/device.py     (or via systemd/pimusicdevice.service)
 
 Sets SDL's dummy video/audio drivers (the ST7789 gets frames over SPI, MPD
 owns the audio), builds the real hardware drivers, and hands everything to
