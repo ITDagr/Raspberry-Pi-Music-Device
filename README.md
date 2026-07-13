@@ -98,6 +98,32 @@ pattern is pixel-checked by `tests/test_render.py` on the Mac.
 - On the Mac, the **P** key is the switch (state prints to the terminal);
   Esc / window-close still quits even while dark or soft-off.
 
+## I²C topology
+
+Everything I²C lives on the Pi's default **bus 1**, exposed by the Beret's
+STEMMA QT port. Two wirings, identical electrically and to the software:
+
+- **Default:** the ANO encoder's STEMMA QT cable plugs **directly into the
+  Beret's STEMMA QT port**.
+- **With the Adafruit 5-Port STEMMA QT Hub (#5625):** the hub is a
+  **passive splitter** — all five ports share the same power, GND, SDA and
+  SCL — so Beret → hub → devices is the same bus with the same addresses.
+  **Zero code changes**; the software just opens `config.I2C_BUS = 1` and
+  talks to addresses.
+
+| Address | Device | Notes |
+|---|---|---|
+| `0x49` | ANO encoder (seesaw) | required; address jumpers exist if it must move |
+| `0x5A` | DRV2605L haptics | fixed address; optional |
+| `0x57` | PiSugar battery | only if attached; optional |
+| `0x68` | PiSugar RTC | only if attached; optional |
+
+No collisions, and the hub leaves headroom for future STEMMA QT devices —
+the only rule is that every device on the bus needs a **unique address**.
+At boot the device verifies the encoder ACKs at `0x49`; if it doesn't, it
+exits with a message listing everything found on the bus. Diagnose with
+`i2cdetect -y 1` or `python3 tools/i2c_scan.py`.
+
 ## Optional peripherals: haptics and PiSugar
 
 The device runs fully with **only the display and encoder attached**.

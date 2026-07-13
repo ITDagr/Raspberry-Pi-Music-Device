@@ -61,8 +61,21 @@ DISPLAY_PROFILES = {
 SPI_SPEED_FALLBACK_HZ = 24_000_000
 SPI_SPEED_HZ = DISPLAY_PROFILES[DISPLAY_PROFILE]["baudrate"]
 
+# --- I2C topology -------------------------------------------------------------
+# Everything I2C hangs off the Pi's default bus 1, exposed by the Beret's
+# STEMMA QT port. The Adafruit 5-Port Hub (#5625) is a passive splitter —
+# all five ports share the same power/GND/SDA/SCL — so plugging devices
+# through it is electrically identical to plugging into the Beret directly:
+# same bus, same addresses, zero code changes. The only rule is that every
+# device needs a unique address (map mirrored in the README):
+#   0x49  ANO encoder seesaw (jumpers exist if it must move)
+#   0x5A  DRV2605L haptics   (fixed; optional)
+#   0x57 + 0x68  PiSugar battery + RTC (only if attached; optional —
+#                and reached via its daemon on TCP 8423, not directly)
+I2C_BUS = 1
+
 # --- input: Adafruit ANO rotary encoder on seesaw ---------------------------
-SEESAW_ADDR = 0x49              # match your wiring
+SEESAW_ADDR = 0x49              # I2C bus 1 via the Beret's STEMMA QT port
 SEESAW_BTN_SELECT = 1           # seesaw pin numbers per the Adafruit ANO guide
 SEESAW_BTN_UP = 2               # match your wiring
 SEESAW_BTN_LEFT = 3             # match your wiring
@@ -79,7 +92,7 @@ ACCEL_WINDOW_S = 1.0            # ... within this window ...
 ACCEL_STEP = 3                  # ... makes each detent move this many rows
 
 # --- haptics: DRV2605L, LRA mode + LRA ROM library --------------------------
-DRV2605_ADDR = 0x5A             # match your wiring
+DRV2605_ADDR = 0x5A             # fixed chip address, I2C bus 1 (optional device)
 EFFECT_TICK = 14                # scroll detent
 EFFECT_CLICK = 1                # select
 EFFECT_BACK = 7                 # navigate back

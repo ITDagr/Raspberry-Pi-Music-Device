@@ -7,3 +7,4 @@ adafruit-blinka
 adafruit-circuitpython-seesaw
 adafruit-circuitpython-drv2605
 python-mpd2
+smbus2          # boot-time encoder probe + tools/i2c_scan.py

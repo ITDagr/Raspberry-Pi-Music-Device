@@ -54,6 +54,28 @@ def display_test() -> int:
     return 0
 
 
+def _check_encoder_bus() -> bool:
+    """The encoder is mandatory: verify the seesaw ACKs before booting.
+    On failure, print one clear message listing everything on the bus."""
+    from shared import config
+    from tools.i2c_scan import scan_bus
+
+    found = scan_bus(config.I2C_BUS)
+    if found is None:
+        print("input: cannot scan the I2C bus (no smbus2/i2c-tools) — "
+              "skipping the encoder probe")
+        return True
+    if config.SEESAW_ADDR in found:
+        return True
+    listing = ", ".join(f"0x{a:02X}" for a in found) or "none"
+    print(f"input: no ANO encoder (seesaw) at 0x{config.SEESAW_ADDR:02X} "
+          f"on I2C bus {config.I2C_BUS}.")
+    print(f"       addresses found on the bus: {listing}")
+    print("       Check the encoder's STEMMA QT cable (into the Beret or the "
+          "5-port hub), then verify with: i2cdetect -y 1")
+    return False
+
+
 def main() -> int:
     import pygame
 
@@ -68,6 +90,8 @@ def main() -> int:
     from pi.player_mpd import PlayerMPD
     from pi.power_pi import PowerSwitchPi
 
+    if not _check_encoder_bus():
+        return 1
     pisugar.start_polling()
     tracks = library_mpd.load_tracks()
     print(f"device v2 — Pi, {len(tracks)} tracks from MPD")

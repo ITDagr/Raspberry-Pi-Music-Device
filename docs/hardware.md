@@ -37,10 +37,11 @@ with `python3 pi/device.py --display-test`.
 
 ### ANO encoder (I²C, seesaw)
 
-SDA → GPIO 2, SCL → GPIO 3, 3V3 + GND. Address `0x49` (`SEESAW_ADDR`).
-Button map on seesaw pins (verify against the Adafruit ANO guide):
-select=1, up=2, left=3, down=4, right=5 (`SEESAW_BTN_*`).
-Wheel direction wrong? Flip `ENCODER_REVERSED`.
+STEMMA QT cable straight into the **Beret's STEMMA QT port** (or through
+the passive 5-port hub — electrically identical). I²C bus 1, address
+`0x49` (`SEESAW_ADDR`). Button map on seesaw pins (verify against the
+Adafruit ANO guide): select=1, up=2, left=3, down=4, right=5
+(`SEESAW_BTN_*`). Wheel direction wrong? Flip `ENCODER_REVERSED`.
 
 ### DRV2605L haptics (I²C)
 
