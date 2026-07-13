@@ -115,6 +115,69 @@ def test_about_draws(renderer):
     assert _frac_non_bg(s) >= 0.02
 
 
+class _FrameBuffer:
+    """Minimal Display double: keeps the composed 240x240 frame so partial
+    and full push paths can be compared byte for byte."""
+
+    def __init__(self) -> None:
+        self.fb = pygame.Surface((scr.SIZE, scr.SIZE), depth=24)
+
+    def push_frame(self, s: pygame.Surface) -> None:
+        self.fb.blit(s, (0, 0))
+
+    def push_region(self, s: pygame.Surface, rect: pygame.Rect) -> None:
+        self.fb.blit(s, rect.topleft, rect)
+
+
+def test_partial_nowplaying_tick_pixel_identical(renderer):
+    """Two consecutive now-playing seconds: pushing only NOWPLAYING_TICK_RECT
+    must land exactly where two full frames land — proves the rect covers
+    everything that changes between seconds."""
+    def frame(elapsed: float) -> pygame.Surface:
+        s = _surface()
+        renderer.draw_nowplaying(s, TRACK, elapsed, True, 60, STATUS)
+        return s
+
+    full, partial = _FrameBuffer(), _FrameBuffer()
+    first = frame(41.0)
+    full.push_frame(first)
+    partial.push_frame(first)
+    second = frame(42.0)
+    full.push_frame(second)
+    partial.push_region(second, scr.NOWPLAYING_TICK_RECT)
+    assert (pygame.image.tobytes(full.fb, "RGB")
+            == pygame.image.tobytes(partial.fb, "RGB"))
+
+
+def test_partial_status_bar_pixel_identical(renderer):
+    """A clock tick in the menu: STATUS_BAR_RECT alone must reproduce the
+    full-frame result."""
+    def frame(clock: str) -> pygame.Surface:
+        s = _surface()
+        renderer.draw(s, MENU, {"clock": clock, "battery": 76, "charging": None})
+        return s
+
+    full, partial = _FrameBuffer(), _FrameBuffer()
+    first = frame("12:34")
+    full.push_frame(first)
+    partial.push_frame(first)
+    second = frame("12:35")
+    full.push_frame(second)
+    partial.push_region(second, scr.STATUS_BAR_RECT)
+    assert (pygame.image.tobytes(full.fb, "RGB")
+            == pygame.image.tobytes(partial.fb, "RGB"))
+
+
+def test_bluetooth_scanning_spinner_draws(renderer):
+    s = _surface()
+    renderer.draw_bluetooth(s, [], 0, None, STATUS, scanning=True)
+    assert _frac_non_bg(s) >= 0.005, "scanning state renders (nearly) nothing"
+    # spinner dots circle (cx, SIZE/2-16) at r=20; the accent dot's position
+    # depends on the tick, so search the whole spinner area
+    assert _rect_has_color(s, pygame.Rect(0, 60, scr.SIZE, 90), scr.ACCENT), \
+        "spinner has no accent dot"
+
+
 def test_status_bar_offline_battery(renderer):
     """No PiSugar data: the header must render an explicit '--'."""
     s = _surface()

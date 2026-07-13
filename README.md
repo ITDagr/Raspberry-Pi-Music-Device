@@ -98,6 +98,67 @@ pattern is pixel-checked by `tests/test_render.py` on the Mac.
 - On the Mac, the **P** key is the switch (state prints to the terminal);
   Esc / window-close still quits even while dark or soft-off.
 
+## Power & Performance
+
+*(Written for a non-expert — nothing here needs prior Pi knowledge.)*
+
+### How long a charge lasts
+
+The Pi Zero 2 W idles at ~0.5 W. With this project's power tweaks applied,
+expect ~0.9–1.2 W while playing music with the screen asleep and
+~1.4–1.7 W in active use. That translates to roughly:
+
+| Battery | Music, screen asleep | Active use |
+|---|---|---|
+| PiSugar 3 (1,200 mAh) | ~3–4 h | ~2–2.5 h |
+| 5,000 mAh class pack | ~12–16 h | ~8–10 h |
+
+**Recommendation: a 5,000 mAh-class battery.** The PiSugar 3 is neat and
+adds a real clock + battery gauge, but its 1,200 mAh is a couple of hours
+of real use. The honest way to check your own numbers is a cheap inline
+USB power meter between the battery and the Pi.
+
+### "Off" comes in two flavors — pick one
+
+The slide switch's behavior is `POWER_SWITCH_ACTION` in `shared/config.py`:
+
+- **`"soft_off"` (default):** the software stops everything and idles.
+  Resume is instant (flip the switch back). But Linux keeps running at
+  ~0.5 W — a 5,000 mAh pack drains in about **a day and a half while
+  "off"**. This stays the default because **a halted Pi cannot be re-woken
+  by the slide switch** — only GPIO 3 or a power cycle can boot a halted
+  Pi.
+- **`"shutdown"`:** saves state, then actually halts Linux
+  (`systemctl poweroff`) — near-zero draw. Choose it **only** if you have
+  a PiSugar (its own button re-powers the Pi) or a hard switch on the
+  battery lead; otherwise flipping the slide switch back on does nothing
+  and you must pull power to reboot.
+
+### What makes it fast and frugal
+
+- **Adaptive loop rate:** 30 fps only while the screen is awake; ~10 Hz
+  dimmed, ~2 Hz asleep, ~4 Hz soft-off. You can't feel it — the first
+  center press only wakes the screen anyway.
+- **Partial display updates:** the once-a-second redraws (clock, progress
+  bar) push only the strip that changed (~12 KB) instead of the full
+  115 KB frame; anything touching layout still pushes a full frame. A
+  pixel-identity test proves the two paths render identically.
+- **Nothing blocks the loop:** Bluetooth scanning runs on a thread behind
+  a spinner (back cancels instantly), the battery refresh is
+  fire-and-forget, and MPD is event-driven (`idle` mode) instead of being
+  polled 5× a second.
+- **OS tweaks the installer applies** (~0.1 W combined, and why):
+  HDMI output disabled (nothing is plugged into it), the ACT LED disabled
+  (invisible inside a case), and the `powersave` CPU governor (a music
+  player never needs burst clocks). **Bluetooth stays on — it carries the
+  audio.**
+- **SPI fallback:** if `--display-test` shows artifacts at the default
+  62.5 MHz, set the display profile's `baudrate` to 24 MHz (the UI caps
+  at ~26 fps there — see the Display section).
+
+Friendlier defaults: the screen wakes at 70 % brightness and dims after
+15 s idle; both are adjustable in Settings → Brightness / `shared/config.py`.
+
 ## I²C topology
 
 Everything I²C lives on the Pi's default **bus 1**, exposed by the Beret's

@@ -10,7 +10,11 @@ import sys
 from pathlib import Path
 
 DEBUG = False           # gate for chatty per-frame prints ("redraw", etc.)
-FPS = 30                # main loop frame rate
+# Adaptive loop rate: full speed only while the screen is awake. Nobody can
+# feel the lower rates — the first press on a dark screen only wakes it.
+FPS = 30                # main loop rate while AWAKE
+FPS_DIM = 10            # while DIM
+FPS_SLEEP = 2           # while SLEEP (soft-off has its own ~4 Hz poll)
 
 # --- platform / persistence -------------------------------------------------
 IS_MAC = sys.platform == "darwin"
@@ -101,7 +105,7 @@ EFFECT_PULSE = 47               # boot flourish
 # --- audio -------------------------------------------------------------------
 MPD_HOST = "127.0.0.1"
 MPD_PORT = 6600
-MPD_POLL_S = 0.2                # status() poll throttle (<= 5 Hz)
+MPD_RETRY_S = 2.0               # idle-thread reconnect backoff when MPD is down
 DEFAULT_VOLUME = 50             # 0-100
 VOLUME_STEP = 5
 VOLUME_FLASH_S = 1.5            # volume overlay lifetime
@@ -128,13 +132,21 @@ PIN_POWER_SWITCH = 13           # Beret-fixed
 POWER_SWITCH_ON_LEVEL = 1       # GPIO level meaning ON; flip if yours reads reversed
 POWER_SWITCH_DEBOUNCE_S = 0.05
 SOFT_OFF_POLL_HZ = 4.0          # switch poll rate while soft-off
+# What flipping the switch OFF does:
+#   "soft_off"  (default) idle in software — instant resume, but Linux still
+#               draws ~0.5 W, so a 5,000 mAh pack drains in ~a day and a half
+#   "shutdown"  save state then `systemctl poweroff` — near-zero draw, BUT a
+#               halted Pi CANNOT be re-woken by GPIO 13 (only GPIO 3 boots a
+#               halted Pi). Choose it only with a PiSugar (its button
+#               re-powers the Pi) or a hard switch on the battery lead.
+POWER_SWITCH_ACTION = "soft_off"
 
 # --- screen dimmer ------------------------------------------------------------
-DIM_AFTER_S = 20.0              # idle seconds before dimming
+DIM_AFTER_S = 15.0              # idle seconds before dimming
 SLEEP_AFTER_S = 60.0            # idle seconds before backlight off
 DIM_LEVEL = 0.15
-WAKE_LEVEL = 1.0                # default awake brightness (0.1-1.0)
-DEFAULT_BRIGHTNESS = 100        # brightness screen value, percent
+WAKE_LEVEL = 0.7                # default awake brightness (0.1-1.0)
+DEFAULT_BRIGHTNESS = 70         # brightness screen value, percent
 BRIGHTNESS_STEP = 10
 BRIGHTNESS_MIN = 10
 BRIGHTNESS_MAX = 100

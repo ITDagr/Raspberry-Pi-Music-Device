@@ -14,11 +14,21 @@ from shared.screen import SIZE
 class MockDisplay:
     def __init__(self, scale: int = 2):
         side = SIZE * scale
+        self._scale = scale
         self.window = pygame.display.set_mode((side, side))
         pygame.display.set_caption("prototype  —  device simulator")
         self.level = 1.0
         self._level_changed = False
         self._overlay = pygame.Surface((side, side), depth=24)  # black, plain RGB
+
+    def _dim(self, scaled: pygame.Surface) -> None:
+        """Gamma-dim `scaled` in place so the 0.15 level still reads on a Mac."""
+        if self.level < 0.99:
+            overlay = self._overlay
+            if scaled.get_size() != overlay.get_size():
+                overlay = pygame.Surface(scaled.get_size(), depth=24)
+            overlay.set_alpha(int((1 - self.level ** 0.5) * 255))
+            scaled.blit(overlay, (0, 0))
 
     def push_frame(self, surface: pygame.Surface) -> None:
         # macOS never maps/presents an SDL window unless events are serviced;
@@ -29,10 +39,18 @@ class MockDisplay:
         # Scale + dim on an RGB surface, then blit opaquely: alpha-format
         # blits straight onto the cocoa display surface render as boxes.
         scaled = pygame.transform.scale(surface, self.window.get_size())
-        if self.level < 0.99:
-            self._overlay.set_alpha(int((1 - self.level ** 0.5) * 255))
-            scaled.blit(self._overlay, (0, 0))
+        self._dim(scaled)
         self.window.blit(scaled, (0, 0))
+        pygame.display.flip()
+
+    def push_region(self, surface: pygame.Surface, rect: pygame.Rect) -> None:
+        pygame.event.pump()
+        k = self._scale
+        region = pygame.Surface(rect.size, depth=24)
+        region.blit(surface, (0, 0), rect)
+        scaled = pygame.transform.scale(region, (rect.w * k, rect.h * k))
+        self._dim(scaled)  # same compositing as full frames at any level
+        self.window.blit(scaled, (rect.x * k, rect.y * k))
         pygame.display.flip()
 
     def set_backlight_level(self, level: float) -> None:

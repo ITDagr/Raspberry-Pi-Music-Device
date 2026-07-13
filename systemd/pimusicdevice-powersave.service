@@ -1,0 +1,9 @@
+[Unit]
+Description=pimusicdevice — powersave CPU governor at boot
+
+[Service]
+Type=oneshot
+ExecStart=/bin/sh -c 'for g in /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor; do echo powersave > "$g"; done'
+
+[Install]
+WantedBy=multi-user.target

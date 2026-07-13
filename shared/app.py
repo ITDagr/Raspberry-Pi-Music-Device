@@ -18,6 +18,7 @@ sleeps the screen; ON boots like a cold start and resumes playback.
 from __future__ import annotations
 
 import random
+import threading
 import time
 from collections import deque
 from enum import Enum, auto
@@ -29,7 +30,8 @@ from shared import config, pisugar
 from shared import state as state_mod
 from shared.hardware import AlwaysOnPowerSwitch, HardwareBundle, Track
 from shared.menu_core import MenuController, build_default_menus, extract_play_context
-from shared.screen import ABOUT_FEATURES, ABOUT_VISIBLE, SIZE, ScreenRenderer
+from shared.screen import (ABOUT_FEATURES, ABOUT_VISIBLE, NOWPLAYING_TICK_RECT,
+                           SIZE, STATUS_BAR_RECT, ScreenRenderer)
 from shared.screen_dimmer import DimState, ScreenDimmer
 from shared.startup import run_startup
 
@@ -71,13 +73,28 @@ class App:
         self.bt_cursor = 0
         self.bt_connect_info: Optional[dict] = None
         self.bt_connect_start = 0.0
+        self.bt_scanning = False
+        self._bt_scan_gen = 0          # bumped to cancel an in-flight scan
+        self._bt_scan_result: Optional[tuple[int, list[dict]]] = None
 
-        self.needs_redraw = True
+        self.needs_redraw = True       # full-frame flag; wins over partials
+        self._partial_rects: list[pygame.Rect] = []
+        self.loop_hz = config.FPS      # rate chosen for the current frame
         self._scroll_times: deque = deque()
         self._overlay_was_active = False
         self._last_status: Optional[dict] = None
         self._last_elapsed_int = -1
         self._last_save = time.monotonic()
+
+    # --- dirty tracking ---------------------------------------------------------
+    def _mark_full(self) -> None:
+        self.needs_redraw = True
+        self._partial_rects.clear()
+
+    def _mark_partial(self, rect: pygame.Rect) -> None:
+        """Queue a small region push; a queued full frame always wins."""
+        if not self.needs_redraw:
+            self._partial_rects.append(rect)
 
     # --- status / persistence -------------------------------------------------
     def _status(self) -> dict:
@@ -258,15 +275,27 @@ class App:
         self.haptic.tick()
 
     def _enter_bluetooth(self) -> None:
+        """Kick off the scan on a thread: the spinner shows immediately and
+        the loop never blocks on the (Pi: ~6 s) bluetoothctl window."""
         print("Scanning Bluetooth devices…")
-        try:
-            self.bt_devices = self.bt.scan_devices()
-        except Exception as e:  # graceful: a dead adapter must not kill the UI
-            print(f"bluetooth: scan failed ({e})")
-            self.bt_devices = []
+        self.bt_devices = []
         self.bt_cursor = 0
         self.bt_connect_info = None
+        self.bt_scanning = True
+        self._bt_scan_gen += 1
+        gen = self._bt_scan_gen
         self.mode = Mode.BLUETOOTH
+
+        def scan() -> None:
+            try:
+                devices = self.bt.scan_devices()
+            except Exception as e:  # graceful: a dead adapter must not kill the UI
+                print(f"bluetooth: scan failed ({e})")
+                devices = []
+            # handed to the main thread; _bluetooth_frame applies it
+            self._bt_scan_result = (gen, devices)
+
+        threading.Thread(target=scan, daemon=True, name="bt-scan").start()
 
     def _bluetooth_event(self, ev: str) -> None:
         info = self.bt_connect_info
@@ -276,6 +305,9 @@ class App:
                 self.bt_connect_info = None  # back to the device list
             else:
                 self.bt_connect_info = None
+                if self.bt_scanning:  # cancel: a late result is discarded
+                    self.bt_scanning = False
+                    self._bt_scan_gen += 1
                 self.mode = Mode.MENU
         elif info is None:
             if ev == "scroll_up":
@@ -326,6 +358,16 @@ class App:
 
     # --- per-frame updates ------------------------------------------------------
     def _bluetooth_frame(self) -> None:
+        result = self._bt_scan_result
+        if result is not None:
+            gen, devices = result
+            self._bt_scan_result = None
+            if gen == self._bt_scan_gen:  # not cancelled meanwhile
+                self.bt_scanning = False
+                self.bt_devices = devices
+                self._mark_full()
+        if self.mode is Mode.BLUETOOTH and self.bt_scanning:
+            self._mark_full()  # animate the scanning spinner
         info = self.bt_connect_info
         if self.mode is Mode.BLUETOOTH and info and info["state"] == "connecting":
             t = time.monotonic() - self.bt_connect_start
@@ -340,7 +382,7 @@ class App:
                         done = False
             if done:
                 info["state"] = "connected"
-            self.needs_redraw = True  # animate the spinner / show the change
+            self._mark_full()  # animate the spinner / show the change
 
     def _render(self, surface) -> None:
         st = self._status()
@@ -353,7 +395,8 @@ class App:
                                           shuffle=self.shuffle)
         elif self.mode is Mode.BLUETOOTH:
             self.renderer.draw_bluetooth(surface, self.bt_devices, self.bt_cursor,
-                                         self.bt_connect_info, st)
+                                         self.bt_connect_info, st,
+                                         scanning=self.bt_scanning)
         elif self.mode is Mode.BATTERY:
             self.renderer.draw_battery_screen(surface, st)
         elif self.mode is Mode.BRIGHTNESS:
@@ -374,6 +417,7 @@ class App:
         self._render(surface)
         self.display.push_frame(surface)
         self.needs_redraw = False
+        self._partial_rects.clear()
 
     def _soft_off_wait(self) -> str:
         """Idle while soft-off: poll only the switch at ~4 Hz. All input is
@@ -396,10 +440,19 @@ class App:
         """Slide switch flipped OFF while running: save everything, stop
         playback, screen fully off, then wait. Flipping back ON re-runs the
         normal boot sequence (animation + state restore)."""
-        print("power: soft off")
         self._save_state()
         if self.player.playing:
             self.player.toggle()
+        if config.POWER_SWITCH_ACTION == "shutdown" and not config.IS_MAC:
+            # near-zero draw, but GPIO 13 cannot re-boot a halted Pi — the
+            # config comment spells out when this is safe to choose
+            print("power: shutdown (POWER_SWITCH_ACTION)")
+            self.display.set_backlight_level(0.0)
+            self.display.sleep()
+            import subprocess
+            subprocess.call(["sudo", "-n", "systemctl", "poweroff"])
+            return "quit"
+        print("power: soft off")
         self.dimmer.suspend()
         self.display.set_backlight_level(0.0)
         self.display.sleep()
@@ -450,52 +503,82 @@ class App:
                     # wakes, and the waking press is swallowed (no select)
                     if ev == "select":
                         self.dimmer.wake()
-                        self.needs_redraw = True
+                        self._mark_full()
                     continue
                 self.dimmer.wake()
-                self.needs_redraw = True
+                self._mark_full()
                 self._handle_event(ev)
 
             # auto-advance, then the player's own bookkeeping
             if self.player.track_finished:
                 self._next_track()
-                self.needs_redraw = True
+                self._mark_full()
             self.player.tick()
             self._bluetooth_frame()
 
+            overlay_active = now < self.vol_flash_until
             status = self._status()
             if status != self._last_status:
                 self._last_status = status
-                self.needs_redraw = True
+                # a clock/battery tick only repaints the status bar strip;
+                # other screens echo status in the body, so repaint fully
+                if self.mode in (Mode.MENU, Mode.NOWPLAYING) and not overlay_active:
+                    self._mark_partial(STATUS_BAR_RECT)
+                else:
+                    self._mark_full()
             if self.dimmer.consume_wake():
-                self.needs_redraw = True
+                self._mark_full()
             if self.display.consume_level_change():
-                self.needs_redraw = True
+                self._mark_full()
             if self.mode is Mode.NOWPLAYING and self.player.playing:
                 whole = int(self.player.elapsed)
                 if whole != self._last_elapsed_int:
                     self._last_elapsed_int = whole
-                    self.needs_redraw = True
-            overlay_active = now < self.vol_flash_until
-            if overlay_active or self._overlay_was_active:
-                self.needs_redraw = True  # active, or expired this frame
+                    if overlay_active:  # overlay dims the whole frame: full
+                        self._mark_full()
+                    else:
+                        self._mark_partial(NOWPLAYING_TICK_RECT)
+            # the overlay itself is static while visible (volume changes are
+            # events -> full); only its expiry needs a repaint underneath
+            if self._overlay_was_active and not overlay_active:
+                self._mark_full()
             self._overlay_was_active = overlay_active
 
             if self.player.playing and now - self._last_save > config.AUTOSAVE_INTERVAL_S:
                 self._save_state()
 
-            if self.needs_redraw:
+            if self.needs_redraw or self._partial_rects:
                 self._render(surface)
-                self.display.push_frame(surface)
+                # partial pushes only while fully awake — DIM/SLEEP levels go
+                # through full frames so the Mac's dim compositing stays exact
+                if not self.needs_redraw and self.dimmer.state is DimState.AWAKE:
+                    seen: set = set()
+                    for rect in self._partial_rects:
+                        key = (rect.x, rect.y, rect.w, rect.h)
+                        if key not in seen:
+                            seen.add(key)
+                            self.display.push_region(surface, rect)
+                    if config.DEBUG:
+                        print("redraw (partial)", self.mode.name)
+                else:
+                    self.display.push_frame(surface)
+                    if config.DEBUG:
+                        print("redraw", self.mode.name)
                 self.needs_redraw = False
-                if config.DEBUG:
-                    print("redraw", self.mode.name)
+                self._partial_rects.clear()
 
+            # adaptive loop rate: nobody feels 10/2 Hz on a dim/dark screen
+            if self.dimmer.state is DimState.AWAKE:
+                self.loop_hz = config.FPS
+            elif self.dimmer.state is DimState.DIM:
+                self.loop_hz = config.FPS_DIM
+            else:
+                self.loop_hz = config.FPS_SLEEP
             if self.selftest:
                 self.selftest(self)
                 clock.tick(0)  # uncapped
             else:
-                clock.tick(config.FPS)
+                clock.tick(self.loop_hz)
 
 
 def run(hw: HardwareBundle, tracks: list[Track], bluetooth_module, *,

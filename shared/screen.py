@@ -15,6 +15,7 @@ DETENT tokens (@ SIZE=240):
 """
 from __future__ import annotations
 
+import math
 from typing import Optional
 
 import pygame
@@ -50,6 +51,13 @@ PILL_H = 32
 PILL_R = 10
 CARD_R = 18
 LIST_Y0 = STATUSH + 20      # first row of a titled (non-root) list
+
+# Dirty rects for the partial-update path (shared.app pushes only these
+# through Display.push_region for the small per-second redraws; anything
+# touching layout still pushes a full frame). A pixel-identity test in
+# tests/test_render.py proves each rect covers everything that changes.
+STATUS_BAR_RECT = pygame.Rect(0, 0, SIZE, STATUSH + 1)       # bar + hairline
+NOWPLAYING_TICK_RECT = pygame.Rect(0, 144, SIZE, 46)         # progress + times
 
 ABOUT_FEATURES = [
     "Now Playing screen",
@@ -341,11 +349,25 @@ class ScreenRenderer:
                      knob=True, height=4)
 
     def draw_bluetooth(self, surface, devices: list, cursor: int,
-                       connect_info: Optional[dict], status: dict) -> None:
+                       connect_info: Optional[dict], status: dict,
+                       scanning: bool = False) -> None:
         surface.fill(C_BASE)
         self._status_bar(surface, status)
         self._render(surface, "BLUETOOTH", self._font(10, bold=True), C_DIM,
                      MARGIN, STATUSH + 6, "topleft")
+        if scanning and not devices:
+            # 8-dot spinner, one accent dot chasing; the scan thread fills
+            # the list when it finishes, back cancels immediately
+            cx, cy = SIZE // 2, SIZE // 2 - 16
+            active = (pygame.time.get_ticks() // 120) % 8
+            for i in range(8):
+                ang = math.tau * i / 8
+                pos = (cx + int(20 * math.cos(ang)), cy + int(20 * math.sin(ang)))
+                pygame.draw.circle(surface, C_ACCENT if i == active else C_LINE,
+                                   pos, 3)
+            self._render(surface, "Scanning…", self._font(13), C_DIM,
+                         SIZE // 2, cy + 36, "midtop")
+            return
         if not devices:
             self._render(surface, "No devices found", self._font(17, bold=True),
                          C_TEXT, SIZE // 2, SIZE // 2 - 10, "midtop")

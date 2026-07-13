@@ -175,7 +175,11 @@ class SelfTestRunner:
         expect(a.ctrl.current_name == "settings", f"expected settings, got {a.ctrl.current_name}")
         press("scroll_down", "scroll_down", "select"); yield 0  # Brightness
         expect(a.mode is Mode.BRIGHTNESS, f"expected BRIGHTNESS, got {a.mode}")
-        press("scroll_down", "scroll_down", "scroll_down"); yield 0  # 100 -> 70
+        press("scroll_down", "scroll_down", "scroll_down"); yield 0  # 70 -> 40
+        expect(a.brightness == 40, f"expected brightness 40, got {a.brightness}")
+        expect(abs(a.dimmer.wake_level - 0.4) < 1e-6,
+               f"expected wake_level 0.4, got {a.dimmer.wake_level}")
+        press("scroll_up", "scroll_up", "scroll_up"); yield 0  # back to 70
         expect(a.brightness == 70, f"expected brightness 70, got {a.brightness}")
         expect(abs(a.dimmer.wake_level - 0.7) < 1e-6,
                f"expected wake_level 0.7, got {a.dimmer.wake_level}")
@@ -193,9 +197,27 @@ class SelfTestRunner:
         expect(a.mode is Mode.BATTERY, f"expected BATTERY, got {a.mode}")
         self._snap("battery")
         press("back"); yield 0
-        press("scroll_up", "select"); yield 0  # Bluetooth (blocking fake scan)
-        expect(a.mode is Mode.BLUETOOTH and len(a.bt_devices) > 0,
-               f"expected BLUETOOTH with devices, got {a.mode} n={len(a.bt_devices)}")
+        # --- Phase 6: the scan runs on a thread; the UI must stay responsive.
+        # Make the fake scan slow enough to observe the scanning state.
+        real_scan = bluetooth_mac.scan_devices
+
+        def slow_scan():
+            time.sleep(1.2)
+            return real_scan()
+
+        bluetooth_mac.scan_devices = slow_scan
+        press("scroll_up", "select"); yield 0.2  # Bluetooth, scan in flight
+        expect(a.mode is Mode.BLUETOOTH and a.bt_scanning,
+               f"expected scanning state, got {a.mode} scanning={a.bt_scanning}")
+        expect(len(a.bt_devices) == 0, "device list must be empty mid-scan")
+        press("back"); yield 0.2  # input accepted DURING the scan
+        expect(a.mode is Mode.MENU, "back during a scan must cancel immediately")
+        press("select"); yield 3.0  # re-enter; slow (1.2s) + real (0.8s) scan
+        expect(a.mode is Mode.BLUETOOTH and not a.bt_scanning
+               and len(a.bt_devices) > 0,
+               f"expected devices after scan, got scanning={a.bt_scanning} "
+               f"n={len(a.bt_devices)}")
+        bluetooth_mac.scan_devices = real_scan
         self._snap("bluetooth_list")
         press("select"); yield 0  # connect first device
         expect(a.bt_connect_info and a.bt_connect_info["state"] == "connecting",
@@ -217,6 +239,8 @@ class SelfTestRunner:
         yield 1.3  # dimmer thread ticks at 0.25 s: DIM then SLEEP by now
         expect(a.dimmer.state is DimState.SLEEP,
                f"expected SLEEP after shrunk timeouts, got {a.dimmer.state}")
+        expect(a.loop_hz == config.FPS_SLEEP,
+               f"loop must drop to {config.FPS_SLEEP} Hz asleep, got {a.loop_hz}")
         cursor_before = a.ctrl.cursor
         press("scroll_down"); yield 0.3
         expect(a.dimmer.state is not DimState.AWAKE,
@@ -227,6 +251,8 @@ class SelfTestRunner:
         expect(a.dimmer.state is DimState.AWAKE, "center press must wake")
         expect(a.ctrl.cursor == cursor_before,
                "the waking press must be swallowed, not select")
+        expect(a.loop_hz == config.FPS,
+               f"loop must return to {config.FPS} Hz awake, got {a.loop_hz}")
         config.DIM_AFTER_S, config.SLEEP_AFTER_S = old_dim, old_sleep
 
         # --- Phase 3b: soft power off -> on with state round-trip --------------

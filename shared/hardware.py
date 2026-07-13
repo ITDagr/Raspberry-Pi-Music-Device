@@ -35,6 +35,11 @@ class Track:
 class Display(Protocol):
     def push_frame(self, surface: "pygame.Surface") -> None: ...
 
+    def push_region(self, surface: "pygame.Surface", rect: "pygame.Rect") -> None:
+        """Push only `rect` of an already fully-rendered frame (windowed
+        CASET/RASET write on the Pi, scaled sub-blit on the Mac). Small
+        periodic updates only; layout changes must use push_frame."""
+
     def set_backlight_level(self, level: float) -> None:
         """Clamp to 0.0-1.0 and set; must raise the level_changed flag."""
 

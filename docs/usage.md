@@ -64,7 +64,7 @@ Title, artist, progress bar with knob, elapsed/remaining timecodes, a
 
 ## Screen dimming & wake
 
-After 20 s idle the screen dims; after 60 s it sleeps (backlight off).
+After 15 s idle the screen dims; after 60 s it sleeps (backlight off).
 Music keeps playing either way. **Only the center button wakes a dim or
 sleeping screen** — the waking press is swallowed (it never also selects),
 and the wheel and other buttons do nothing at all while the screen is

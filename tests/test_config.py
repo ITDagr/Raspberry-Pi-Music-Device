@@ -3,16 +3,18 @@ from __future__ import annotations
 
 from shared import config
 
-PIN_NAMES = ["PIN_DC", "PIN_RST", "PIN_BL", "SPI_BUS", "SPI_DEVICE",
-             "SEESAW_ADDR", "DRV2605_ADDR", "SEESAW_BTN_SELECT",
-             "SEESAW_BTN_UP", "SEESAW_BTN_LEFT", "SEESAW_BTN_DOWN",
-             "SEESAW_BTN_RIGHT", "EFFECT_TICK", "EFFECT_CLICK",
-             "EFFECT_BACK", "EFFECT_PULSE"]
+PIN_NAMES = ["PIN_DC", "PIN_RST", "PIN_BL", "PIN_POWER_SWITCH", "SPI_BUS",
+             "SPI_DEVICE", "I2C_BUS", "SEESAW_ADDR", "DRV2605_ADDR",
+             "SEESAW_BTN_SELECT", "SEESAW_BTN_UP", "SEESAW_BTN_LEFT",
+             "SEESAW_BTN_DOWN", "SEESAW_BTN_RIGHT", "EFFECT_TICK",
+             "EFFECT_CLICK", "EFFECT_BACK", "EFFECT_PULSE"]
 
-TIMING_NAMES = ["FPS", "AUTOSAVE_INTERVAL_S", "DIM_AFTER_S", "SLEEP_AFTER_S",
-                "VOLUME_FLASH_S", "STARTUP_DURATION_S", "MPD_POLL_S",
-                "PISUGAR_POLL_S", "BT_CONNECT_MIN_S", "BT_CONNECT_MAX_S",
-                "BACK_HOLD_S", "DEBOUNCE_S", "SPI_SPEED_HZ"]
+TIMING_NAMES = ["FPS", "FPS_DIM", "FPS_SLEEP", "AUTOSAVE_INTERVAL_S",
+                "DIM_AFTER_S", "SLEEP_AFTER_S", "VOLUME_FLASH_S",
+                "STARTUP_DURATION_S", "MPD_RETRY_S", "PISUGAR_POLL_S",
+                "PISUGAR_REPROBE_S", "BT_CONNECT_MIN_S", "BT_CONNECT_MAX_S",
+                "BACK_HOLD_S", "DEBOUNCE_S", "POWER_SWITCH_DEBOUNCE_S",
+                "SOFT_OFF_POLL_HZ", "SPI_SPEED_HZ"]
 
 
 def test_pins_are_ints():

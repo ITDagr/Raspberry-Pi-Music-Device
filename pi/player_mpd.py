@@ -1,12 +1,15 @@
-"""device v2 — PlayerState on MPD (python-mpd2) with auto-reconnect.
+"""device v2 — PlayerState on MPD (python-mpd2), event-driven, auto-reconnect.
 
-tick() polls status() at most 5 Hz and caches; elapsed interpolates between
-polls. A natural track end shows up as a play -> stop transition (we always
-queue exactly one song), which latches track_finished once. Every MPD command
-retries once through a reconnect, and failures log once instead of crashing.
+No status polling: a second MPD connection sits in `idle` mode on a daemon
+thread and receives player/mixer events; elapsed extrapolates locally
+between events. A natural track end shows up as a play -> stop transition
+(we always queue exactly one song), which latches track_finished once.
+Every command retries once through a reconnect, and failures log once
+instead of crashing.
 """
 from __future__ import annotations
 
+import threading
 import time
 from typing import Optional
 
@@ -25,8 +28,41 @@ class PlayerMPD:
         self._elapsed_at = time.monotonic()
         self._last_state = "stop"
         self._finished = False
-        self._last_poll = 0.0
         self._warned = False
+        threading.Thread(target=self._idle_loop, daemon=True,
+                         name="mpd-idle").start()
+
+    # --- event thread -----------------------------------------------------------
+    def _idle_loop(self) -> None:
+        """Blocks in MPD `idle` and applies status on each player/mixer event
+        — replaces the old 5 Hz polling entirely. Plain attribute writes are
+        GIL-safe; a dead MPD is retried quietly every 2 s."""
+        from mpd import MPDClient
+
+        while True:
+            try:
+                client = MPDClient()
+                client.timeout = 5            # for connect only
+                client.connect(config.MPD_HOST, config.MPD_PORT)
+                client.timeout = None         # idle blocks indefinitely
+                self._apply_status(client.status())
+                while True:
+                    client.idle("player", "mixer")
+                    self._apply_status(client.status())
+            except Exception:
+                time.sleep(config.MPD_RETRY_S)
+
+    def _apply_status(self, status) -> None:
+        if not status:
+            return
+        state = status.get("state", "stop")
+        self._elapsed = float(status.get("elapsed", 0.0) or 0.0)
+        self._elapsed_at = time.monotonic()
+        if self._last_state == "play" and state == "stop" and self._track:
+            self._finished = True  # our single-song queue ran out naturally
+            self._elapsed = self._track.duration
+        self._playing = state == "play"
+        self._last_state = state
 
     # --- connection -----------------------------------------------------------
     def _connect(self):
@@ -92,21 +128,7 @@ class PlayerMPD:
         self._elapsed_at = time.monotonic()
 
     def tick(self) -> None:
-        now = time.monotonic()
-        if now - self._last_poll < config.MPD_POLL_S:
-            return
-        self._last_poll = now
-        status = self._cmd("status")
-        if not status:
-            return
-        state = status.get("state", "stop")
-        self._elapsed = float(status.get("elapsed", 0.0) or 0.0)
-        self._elapsed_at = now
-        if self._last_state == "play" and state == "stop" and self._track:
-            self._finished = True  # our single-song queue ran out naturally
-            self._elapsed = self._track.duration
-        self._playing = state == "play"
-        self._last_state = state
+        pass  # event-driven: the idle thread keeps state fresh
 
     # --- state --------------------------------------------------------------------
     @property
