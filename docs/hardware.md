@@ -67,6 +67,7 @@ silently when absent.
 | ring up/down | same as wheel detents |
 | ring left | back in menus · previous track in Now Playing |
 | ring right | select in menus · next track in Now Playing |
+| Beret buttons (GPIO 5/6) | unmapped by default — set `BERET_BUTTONS` in config ("back"/"select" are natural) |
 
 Timings (`BACK_HOLD_S`, debounce, encoder acceleration) are in
 `shared/config.py`.

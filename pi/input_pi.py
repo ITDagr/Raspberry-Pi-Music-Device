@@ -1,10 +1,15 @@
-"""device v2 — Adafruit ANO rotary encoder + 5 buttons via seesaw I2C.
+"""device v2 — Adafruit ANO rotary encoder + 5 buttons via seesaw I2C,
+plus the Beret's two tactile buttons on GPIO.
 
 Encoder detents become scroll_up/scroll_down (one event per detent, CW =
 scroll_down unless config.ENCODER_REVERSED). Buttons are active-low with
 internal pull-ups, edge-detected with a ~5 ms debounce. Holding select for
 >= 600 ms fires "back" at the threshold and suppresses the release's select
 — the physical stand-in for the Mac's Backspace.
+
+Beret buttons (GPIO 5/6): mapped through config.BERET_BUTTONS to events
+from the standard vocabulary, or None (default) for no behavior. GPIO is
+only claimed for mapped buttons.
 """
 from __future__ import annotations
 
@@ -42,6 +47,19 @@ class ANOInput:
         self._select_hold_fired = False
         self._warned = False
         self.quit_requested = False
+
+        # Beret tactile buttons: claim GPIO only for pins mapped to an event
+        self._beret = {pin: ev for pin, ev in config.BERET_BUTTONS.items() if ev}
+        self._beret_pressed = {pin: False for pin in self._beret}
+        self._beret_changed_at = {pin: now for pin in self._beret}
+        if self._beret:
+            import RPi.GPIO as GPIO
+
+            self._beret_gpio = GPIO
+            GPIO.setmode(GPIO.BCM)
+            GPIO.setwarnings(False)
+            for pin in self._beret:
+                GPIO.setup(pin, GPIO.IN, pull_up_down=GPIO.PUD_UP)
 
     def read(self) -> list[str]:
         try:
@@ -90,5 +108,16 @@ class ANOInput:
                 and now - self._select_down_at >= config.BACK_HOLD_S):
             self._select_hold_fired = True
             events.append("back")
+
+        # Beret tactile buttons: active-low, debounced edges, fire on press
+        for pin, ev in self._beret.items():
+            pressed = not self._beret_gpio.input(pin)
+            if pressed != self._beret_pressed[pin]:
+                if now - self._beret_changed_at[pin] < config.DEBOUNCE_S:
+                    continue  # bounce
+                self._beret_pressed[pin] = pressed
+                self._beret_changed_at[pin] = now
+                if pressed:
+                    events.append(ev)
 
         return events

@@ -114,6 +114,12 @@ PISUGAR_POLL_S = 30.0
 PISUGAR_TIMEOUT_S = 0.5
 PISUGAR_REPROBE_S = 300.0       # silent re-probe cadence while offline
 
+# --- Beret tactile buttons (GPIO 5 and GPIO 6, active-low, debounced) --------
+# Map each to an event from the standard vocabulary (see shared/hardware.py)
+# or None to disable. Both default to None — no behavior change out of the
+# box; "back" and "select" are natural choices if you want them live.
+BERET_BUTTONS: dict[int, str | None] = {5: None, 6: None}
+
 # --- soft power: the Beret's slide switch on GPIO 13 -------------------------
 # Per Adafruit the slide switch is NOT a real power switch — just a GPIO that
 # reads high or low — so "off" is implemented in software (save state, stop
