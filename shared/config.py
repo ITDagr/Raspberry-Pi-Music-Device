@@ -101,6 +101,15 @@ PISUGAR_POLL_S = 30.0
 PISUGAR_TIMEOUT_S = 0.5
 PISUGAR_REPROBE_S = 300.0       # silent re-probe cadence while offline
 
+# --- soft power: the Beret's slide switch on GPIO 13 -------------------------
+# Per Adafruit the slide switch is NOT a real power switch — just a GPIO that
+# reads high or low — so "off" is implemented in software (save state, stop
+# playback, screen off, idle loop). A halted Pi cannot be re-woken by GPIO 13.
+PIN_POWER_SWITCH = 13           # Beret-fixed
+POWER_SWITCH_ON_LEVEL = 1       # GPIO level meaning ON; flip if yours reads reversed
+POWER_SWITCH_DEBOUNCE_S = 0.05
+SOFT_OFF_POLL_HZ = 4.0          # switch poll rate while soft-off
+
 # --- screen dimmer ------------------------------------------------------------
 DIM_AFTER_S = 20.0              # idle seconds before dimming
 SLEEP_AFTER_S = 60.0            # idle seconds before backlight off

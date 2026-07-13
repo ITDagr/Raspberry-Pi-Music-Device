@@ -31,6 +31,7 @@ class ScreenDimmer:
         self._last_activity = time.monotonic()
         self._wake_level = config.WAKE_LEVEL
         self._woke = False
+        self._suspended = False
 
     def start(self) -> None:
         threading.Thread(target=self._run, daemon=True, name="dimmer").start()
@@ -39,6 +40,8 @@ class ScreenDimmer:
         while True:
             time.sleep(0.25)
             with self._lock:
+                if self._suspended:
+                    continue
                 idle = time.monotonic() - self._last_activity
                 if self._state is DimState.AWAKE and idle >= config.DIM_AFTER_S:
                     self._state = DimState.DIM
@@ -65,6 +68,20 @@ class ScreenDimmer:
             self._wake_level = max(0.1, min(1.0, float(level)))
             if self._state is DimState.AWAKE:
                 self._set_level(self._wake_level)
+
+    def suspend(self) -> None:
+        """Soft-off: stop walking the DIM/SLEEP ladder; the level is owned
+        by whoever suspended us until resume()."""
+        with self._lock:
+            self._suspended = True
+
+    def resume(self) -> None:
+        """Back from soft-off: awake at the stored brightness, timer reset."""
+        with self._lock:
+            self._suspended = False
+            self._last_activity = time.monotonic()
+            self._state = DimState.AWAKE
+            self._set_level(self._wake_level)
 
     def consume_wake(self) -> bool:
         """One-shot: True once after a DIM/SLEEP -> AWAKE transition."""

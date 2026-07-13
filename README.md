@@ -81,6 +81,23 @@ an UP arrow, and labeled pure R/G/B bars — then holds. Any offset,
 rotation, or color-order mistake is visible in one second. The same
 pattern is pixel-checked by `tests/test_render.py` on the Mac.
 
+## Power model: center-button wake + soft power switch
+
+- **Waking the screen:** while the screen is dim or asleep, only a center
+  press does anything — it wakes the screen and is swallowed. Rotation and
+  every other button are ignored on a dark screen (no hidden actions, no
+  haptics). Music keeps playing with the screen off.
+- **The Beret's slide switch (GPIO 13) is a *soft* power switch.** Per
+  Adafruit it is just a GPIO input, so "off" happens in software: flipping
+  OFF saves the full state, stops playback, blanks and sleeps the panel,
+  and drops into an idle loop that polls only the switch at ~4 Hz —
+  every input including the center button is ignored. Flipping ON runs
+  the startup animation and restores state exactly like a normal boot,
+  resuming playback at the saved position. Booting with the switch OFF
+  stays dark (no animation) until it flips ON.
+- On the Mac, the **P** key is the switch (state prints to the terminal);
+  Esc / window-close still quits even while dark or soft-off.
+
 ## Optional peripherals: haptics and PiSugar
 
 The device runs fully with **only the display and encoder attached**.

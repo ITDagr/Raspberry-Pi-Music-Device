@@ -122,3 +122,19 @@ class DisplayPi:
 
     def set_backlight(self, on: bool) -> None:
         self.set_backlight_level(1.0 if on else 0.0)
+
+    def sleep(self) -> None:
+        """Soft-off: blank and sleep the panel (backlight is handled separately)."""
+        try:
+            self._cmd(0x28)  # DISPOFF
+            self._cmd(0x10)  # SLPIN
+        except Exception:
+            pass
+
+    def wake(self) -> None:
+        try:
+            self._cmd(0x11)  # SLPOUT
+            time.sleep(0.12)
+            self._cmd(0x29)  # DISPON
+        except Exception:
+            pass

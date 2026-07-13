@@ -10,7 +10,10 @@ Modes and controls:
     BLUETOOTH   wheel picks a device - select connects - left/back leaves
     BATTERY / BRIGHTNESS / ABOUT   wheel adjusts/scrolls - left/back leaves
 
-The first press on a dim or sleeping screen only wakes it.
+While the screen is dim or asleep only the center button does anything: it
+wakes the screen and is swallowed. The Beret's slide switch (GPIO 13 / the
+P key on Mac) is a soft power switch — OFF saves state, stops playback and
+sleeps the screen; ON boots like a cold start and resumes playback.
 """
 from __future__ import annotations
 
@@ -24,7 +27,7 @@ import pygame
 
 from shared import config, pisugar
 from shared import state as state_mod
-from shared.hardware import HardwareBundle, Track
+from shared.hardware import AlwaysOnPowerSwitch, HardwareBundle, Track
 from shared.menu_core import MenuController, build_default_menus, extract_play_context
 from shared.screen import ABOUT_FEATURES, ABOUT_VISIBLE, SIZE, ScreenRenderer
 from shared.screen_dimmer import DimState, ScreenDimmer
@@ -47,9 +50,11 @@ class App:
         self.input = hw.input
         self.haptic = hw.haptic
         self.player = hw.player
+        self.power = hw.power or AlwaysOnPowerSwitch()
         self.tracks = tracks
         self.bt = bluetooth_module
         self.selftest = selftest_script
+        self.boots = 0  # startup-animation runs (boot + every soft-off resume)
 
         self.ctrl = MenuController(build_default_menus(tracks))
         self.renderer = ScreenRenderer()
@@ -358,6 +363,57 @@ class App:
         if time.monotonic() < self.vol_flash_until:
             self.renderer.draw_volume_overlay(surface, self.player.volume)
 
+    # --- soft power -------------------------------------------------------------
+    def _boot(self, surface) -> None:
+        """Startup animation + state restore + forced first frame — the same
+        sequence for a cold boot and a soft-off resume."""
+        self.boots += 1
+        run_startup(surface, self.display, self.haptic, self.ctrl, self.renderer,
+                    self._status)
+        self._restore_state()
+        self._render(surface)
+        self.display.push_frame(surface)
+        self.needs_redraw = False
+
+    def _soft_off_wait(self) -> str:
+        """Idle while soft-off: poll only the switch at ~4 Hz. All input is
+        drained and discarded — center button included — except 'quit', which
+        must always work on the Mac (Esc / window close). Returns 'on'|'quit'."""
+        poll_s = 1.0 / config.SOFT_OFF_POLL_HZ
+        while True:
+            for ev in self.input.read():
+                if ev == "quit":
+                    return "quit"
+            if self.power.is_on():
+                return "on"
+            if self.selftest:
+                self.selftest(self)
+                time.sleep(0.01)  # scripted: fast, but never a hard spin
+            else:
+                time.sleep(poll_s)
+
+    def _soft_off(self, surface) -> str:
+        """Slide switch flipped OFF while running: save everything, stop
+        playback, screen fully off, then wait. Flipping back ON re-runs the
+        normal boot sequence (animation + state restore)."""
+        print("power: soft off")
+        self._save_state()
+        if self.player.playing:
+            self.player.toggle()
+        self.dimmer.suspend()
+        self.display.set_backlight_level(0.0)
+        self.display.sleep()
+        if self._soft_off_wait() == "quit":
+            return "quit"
+        print("power: on")
+        self.display.wake()
+        self.dimmer.resume()
+        # boot from scratch: fresh menus, MENU mode, animation, restore
+        self.ctrl = MenuController(build_default_menus(self.tracks))
+        self.mode = Mode.MENU
+        self._boot(surface)
+        return "on"
+
     # --- main loop ------------------------------------------------------------------
     def run(self) -> None:
         pisugar.start_polling()
@@ -365,29 +421,39 @@ class App:
         # macOS carries an alpha channel that SDL's text/alpha blits mangle
         # into solid boxes. An explicit RGB canvas sidesteps that entirely.
         surface = pygame.Surface((SIZE, SIZE), depth=24)
-        run_startup(surface, self.display, self.haptic, self.ctrl, self.renderer,
-                    self._status)
+        if not self.power.is_on():
+            # booted with the switch OFF: no startup animation, stay dark
+            self.display.set_backlight_level(0.0)
+            self.display.sleep()
+            if self._soft_off_wait() == "quit":
+                pygame.quit()
+                return
+            self.display.wake()
+            self.display.set_backlight_level(self.dimmer.wake_level)
+        self._boot(surface)
         self.dimmer.start()
-        self._restore_state()
-        # forced initial frame: never wait for the first input to draw the menu
-        self._render(surface)
-        self.display.push_frame(surface)
-        self.needs_redraw = False
         clock = pygame.time.Clock()
 
         while True:
             now = time.monotonic()
+            if not self.power.is_on():
+                if self._soft_off(surface) == "quit":
+                    pygame.quit()
+                    return
             for ev in self.input.read():
                 if ev == "quit":
                     self._save_state()
                     pygame.quit()
                     return
-                # dimmer gate: the first press on a dark screen only wakes it
-                was_dark = self.dimmer.state is not DimState.AWAKE
+                if self.dimmer.state is not DimState.AWAKE:
+                    # dark screen: only the center button does anything — it
+                    # wakes, and the waking press is swallowed (no select)
+                    if ev == "select":
+                        self.dimmer.wake()
+                        self.needs_redraw = True
+                    continue
                 self.dimmer.wake()
                 self.needs_redraw = True
-                if was_dark:
-                    continue
                 self._handle_event(ev)
 
             # auto-advance, then the player's own bookkeeping

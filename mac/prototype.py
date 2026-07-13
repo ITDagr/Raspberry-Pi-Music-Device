@@ -48,10 +48,12 @@ from shared import app, config, pisugar  # noqa: E402
 from shared.hardware import HardwareBundle, NullHaptic  # noqa: E402
 from shared.menu_core import build_default_menus, extract_play_context  # noqa: E402
 from mac import bluetooth_mac, library_mac  # noqa: E402
+from shared.screen_dimmer import DimState  # noqa: E402
 from mac.display_mock import MockDisplay  # noqa: E402
 from mac.haptic_mock import MockHaptic  # noqa: E402
 from mac.input_mock import MockANOInput  # noqa: E402
 from mac.player_mac import PlayerMac  # noqa: E402
+from mac.power_mock import MockPowerSwitch  # noqa: E402
 
 
 class SelfTestError(AssertionError):
@@ -208,6 +210,52 @@ class SelfTestRunner:
                "back from connected should return to the device list")
         press("back"); yield 0
         expect(a.mode is Mode.MENU, "back should leave bluetooth")
+
+        # --- Phase 3a: wake only by center press -------------------------------
+        old_dim, old_sleep = config.DIM_AFTER_S, config.SLEEP_AFTER_S
+        config.DIM_AFTER_S, config.SLEEP_AFTER_S = 0.3, 0.6
+        yield 1.3  # dimmer thread ticks at 0.25 s: DIM then SLEEP by now
+        expect(a.dimmer.state is DimState.SLEEP,
+               f"expected SLEEP after shrunk timeouts, got {a.dimmer.state}")
+        cursor_before = a.ctrl.cursor
+        press("scroll_down"); yield 0.3
+        expect(a.dimmer.state is not DimState.AWAKE,
+               "an arrow must not wake a dark screen")
+        expect(a.ctrl.cursor == cursor_before,
+               "an arrow moved the menu while the screen was dark")
+        press("select"); yield 0.3
+        expect(a.dimmer.state is DimState.AWAKE, "center press must wake")
+        expect(a.ctrl.cursor == cursor_before,
+               "the waking press must be swallowed, not select")
+        config.DIM_AFTER_S, config.SLEEP_AFTER_S = old_dim, old_sleep
+
+        # --- Phase 3b: soft power off -> on with state round-trip --------------
+        track_before = a.player.track.index
+        elapsed_before = a.player.elapsed
+        boots_before = a.boots
+        a.power.toggle()  # the selftest's "press P": switch OFF
+        yield 0.4
+        expect(not a.player.playing, "soft-off must stop playback")
+        expect(a.display.level == 0.0, "soft-off must turn the backlight off")
+        with open(config.STATE_PATH, encoding="utf-8") as f:
+            saved = json.load(f)
+        expect(saved.get("track_index") == track_before,
+               f"state file track {saved.get('track_index')} != {track_before}")
+        expect(abs(float(saved.get("elapsed", -99)) - elapsed_before) < 2.0,
+               f"state file elapsed {saved.get('elapsed')} far from {elapsed_before}")
+        press("scroll_down", "scroll_down", "select"); yield 0.4  # ignored while off
+        expect(not a.player.playing and a.display.level == 0.0,
+               "input leaked into soft-off")
+        a.power.toggle()  # switch ON
+        yield 1.2  # startup animation (0.2 s in selftest) + restore
+        expect(a.boots == boots_before + 1,
+               "power-on did not run the startup animation")
+        expect(a.player.playing, "power-on did not resume playback")
+        expect(a.player.track.index == track_before,
+               f"resumed wrong track {a.player.track.index} != {track_before}")
+        expect(abs(a.player.elapsed - float(saved["elapsed"])) < 3.0,
+               f"resumed at {a.player.elapsed:.1f}, saved {saved['elapsed']}")
+        expect(a.mode is Mode.MENU, "power-on should boot into MENU")
         # StopIteration -> runner pushes quit; state file checked afterwards
 
     def verify_state_file(self) -> None:
@@ -242,7 +290,8 @@ def _run_selftest(tracks, dump_dir: str | None = None) -> int:
     runner = SelfTestRunner(inp, tracks, dump_dir, display)
     # NullHaptic = the failed-haptics-probe result; the whole run must work
     # with it installed, proving no code path needs a real motor
-    hw = HardwareBundle(display, inp, NullHaptic(), PlayerMac(tracks))
+    hw = HardwareBundle(display, inp, NullHaptic(), PlayerMac(tracks),
+                        power=MockPowerSwitch())
     t0 = time.monotonic()
     try:
         app.run(hw, tracks, bluetooth_mac, selftest_script=runner)
@@ -268,9 +317,11 @@ def main() -> int:
         return _run_selftest(tracks, DUMP_DIR)
     pisugar.start_polling()
     print("controls: ↑/↓ wheel · Enter/Space select · → right · ← left · "
-          "Backspace back · Esc quit")
+          "Backspace back · P power switch · Esc quit")
     print("Haptic events print here:")
-    hw = HardwareBundle(MockDisplay(), MockANOInput(), MockHaptic(), PlayerMac(tracks))
+    power = MockPowerSwitch()
+    hw = HardwareBundle(MockDisplay(), MockANOInput(power), MockHaptic(),
+                        PlayerMac(tracks), power=power)
     try:
         app.run(hw, tracks, bluetooth_mac)
     except KeyboardInterrupt:

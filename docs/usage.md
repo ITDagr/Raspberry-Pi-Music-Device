@@ -62,11 +62,22 @@ Title, artist, progress bar with knob, elapsed/remaining timecodes, a
   the screen's "awake" level. Any button exits.
 - **About**: version and scrollable feature list.
 
-## Screen dimming
+## Screen dimming & wake
 
-After 20 s idle the screen dims to 15 %; after 60 s it sleeps (backlight
-off). Any input wakes it — **the waking press is swallowed**, so you never
-mis-click on a dark screen. Timings: `DIM_AFTER_S` / `SLEEP_AFTER_S`.
+After 20 s idle the screen dims; after 60 s it sleeps (backlight off).
+Music keeps playing either way. **Only the center button wakes a dim or
+sleeping screen** — the waking press is swallowed (it never also selects),
+and the wheel and other buttons do nothing at all while the screen is
+dark. Timings: `DIM_AFTER_S` / `SLEEP_AFTER_S`.
+
+## Soft power (the Beret's slide switch, or P on the Mac)
+
+The slide switch is a GPIO input, not a real power cut, so "off" is soft:
+flipping it OFF saves the full state (track, position, volume, shuffle,
+brightness), stops playback, and puts the screen to sleep; the device then
+only watches the switch (~4 Hz). Every other input is ignored while off.
+Flipping it ON runs the startup animation and resumes exactly where you
+were — booting with the switch already OFF stays dark until you flip it.
 
 ## Saved state
 

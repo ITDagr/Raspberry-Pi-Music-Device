@@ -45,3 +45,9 @@ class MockDisplay:
 
     def set_backlight(self, on: bool) -> None:
         self.set_backlight_level(1.0 if on else 0.0)
+
+    def sleep(self) -> None:
+        pass  # backlight level 0 already blacks the window
+
+    def wake(self) -> None:
+        pass

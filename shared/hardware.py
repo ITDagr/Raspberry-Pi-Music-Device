@@ -44,6 +44,12 @@ class Display(Protocol):
     def set_backlight(self, on: bool) -> None:
         """Convenience: level 1.0 / 0.0."""
 
+    def sleep(self) -> None:
+        """Deep sleep for soft-off (ST7789 DISPOFF+SLPIN on the Pi); may no-op."""
+
+    def wake(self) -> None:
+        """Undo sleep() (SLPOUT+DISPON); may no-op."""
+
 
 class InputSource(Protocol):
     def read(self) -> list[str]:
@@ -90,9 +96,22 @@ class Player(Protocol):
         """Latches True exactly once when a track ends naturally, then resets."""
 
 
+class PowerSwitch(Protocol):
+    def is_on(self) -> bool:
+        """Debounced position of the (soft) power switch."""
+
+
+class AlwaysOnPowerSwitch:
+    """PowerSwitch for targets without one: the device is simply always on."""
+
+    def is_on(self) -> bool:
+        return True
+
+
 @dataclass
 class HardwareBundle:
     display: Display
     input: InputSource
     haptic: Haptic
     player: Player
+    power: Optional[PowerSwitch] = None  # None ≙ AlwaysOnPowerSwitch
