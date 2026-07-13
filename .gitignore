@@ -5,3 +5,4 @@ mac/_audio/
 .device_state.json
 .device_state.json.tmp
 .pytest_cache/
+.DS_Store
