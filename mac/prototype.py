@@ -45,7 +45,7 @@ if SELFTEST or DUMP_DIR:  # must land before pygame initializes SDL
 import pygame  # noqa: E402
 
 from shared import app, config, pisugar  # noqa: E402
-from shared.hardware import HardwareBundle  # noqa: E402
+from shared.hardware import HardwareBundle, NullHaptic  # noqa: E402
 from shared.menu_core import build_default_menus, extract_play_context  # noqa: E402
 from mac import bluetooth_mac, library_mac  # noqa: E402
 from mac.display_mock import MockDisplay  # noqa: E402
@@ -139,6 +139,12 @@ class SelfTestRunner:
 
         self._snap("startup_final", startup_mod.last_hero_frame)
         self._snap("menu_home")
+        # Phase 2: both peripheral probes were forced to fail (dead PiSugar
+        # port, NullHaptic) — boot reached here cleanly, battery must be "--"
+        st = a._status()
+        expect(st["battery"] is None,
+               f"expected battery None with PiSugar offline, got {st['battery']}")
+        expect(isinstance(a.haptic, NullHaptic), "expected NullHaptic installed")
         press("select"); yield 0  # home -> Music
         expect(a.ctrl.current_name == "music", f"expected music menu, got {a.ctrl.current_name}")
         press("scroll_down", "scroll_down", "select"); yield 0  # -> Songs
@@ -226,6 +232,7 @@ class SelfTestRunner:
 def _run_selftest(tracks, dump_dir: str | None = None) -> int:
     config.STARTUP_DURATION_S = 0.2   # keep the run inside the time budget
     config.ENCODER_ACCEL = False      # scripted detents fire faster than 1 s
+    config.PISUGAR_PORT = 1           # force the boot probe to fail: offline mode
     if os.path.exists(config.STATE_PATH):
         os.remove(config.STATE_PATH)
     if dump_dir:
@@ -233,7 +240,9 @@ def _run_selftest(tracks, dump_dir: str | None = None) -> int:
     inp = ScriptedInput()
     display = CaptureDisplay()
     runner = SelfTestRunner(inp, tracks, dump_dir, display)
-    hw = HardwareBundle(display, inp, MockHaptic(), PlayerMac(tracks))
+    # NullHaptic = the failed-haptics-probe result; the whole run must work
+    # with it installed, proving no code path needs a real motor
+    hw = HardwareBundle(display, inp, NullHaptic(), PlayerMac(tracks))
     t0 = time.monotonic()
     try:
         app.run(hw, tracks, bluetooth_mac, selftest_script=runner)
@@ -248,14 +257,16 @@ def _run_selftest(tracks, dump_dir: str | None = None) -> int:
 def main() -> int:
     pygame.mixer.pre_init(22050, -16, 1, 1024)
     pygame.init()
-    pisugar.start_polling()
     print("device v2 — Mac prototype")
     print("generating synthetic audio… (first run only)")
     library_mac.ensure_audio()
     tracks = library_mac.TRACKS
     print("ready.")
     if SELFTEST or DUMP_DIR:
+        # no start_polling() yet: _run_selftest points PiSugar at a dead
+        # port first, then app.run() starts the (probing) poll thread
         return _run_selftest(tracks, DUMP_DIR)
+    pisugar.start_polling()
     print("controls: ↑/↓ wheel · Enter/Space select · → right · ← left · "
           "Backspace back · Esc quit")
     print("Haptic events print here:")

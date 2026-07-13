@@ -94,11 +94,12 @@ VOLUME_STEP = 5
 VOLUME_FLASH_S = 1.5            # volume overlay lifetime
 PREV_RESTART_AFTER_S = 3.0      # iPod-style previous: restart if elapsed > this
 
-# --- PiSugar ------------------------------------------------------------------
+# --- PiSugar (optional — one boot probe decides online/offline mode) ---------
 PISUGAR_HOST = "127.0.0.1"
 PISUGAR_PORT = 8423
 PISUGAR_POLL_S = 30.0
 PISUGAR_TIMEOUT_S = 0.5
+PISUGAR_REPROBE_S = 300.0       # silent re-probe cadence while offline
 
 # --- screen dimmer ------------------------------------------------------------
 DIM_AFTER_S = 20.0              # idle seconds before dimming

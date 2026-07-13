@@ -81,6 +81,25 @@ an UP arrow, and labeled pure R/G/B bars — then holds. Any offset,
 rotation, or color-order mistake is visible in one second. The same
 pattern is pixel-checked by `tests/test_render.py` on the Mac.
 
+## Optional peripherals: haptics and PiSugar
+
+The device runs fully with **only the display and encoder attached**.
+
+- **Haptics (DRV2605L, I²C `0x5A`):** probed once at boot; on any failure
+  (library missing, no ACK) a `NullHaptic` with no-op effects is installed
+  and one line is logged ("haptics: not detected — continuing without").
+  App code calls `haptic.tick()/click()/back()/pulse()` unconditionally —
+  there are no `if haptic:` checks, and runtime I²C errors are wrapped too,
+  so a motor unplugged mid-run cannot crash the UI.
+- **PiSugar (TCP `127.0.0.1:8423`):** one boot-time probe with a short
+  timeout. Absent → offline mode: the clock is the system clock, the
+  battery reads "--" everywhere, `refresh()` is a no-op, and the only
+  traffic is a silent re-probe every 5 minutes. No retry storms, no log
+  spam. The Mac simulator runs this exact code path on every launch.
+
+The selftest forces both probes to fail and asserts a clean boot, working
+navigation, and the "--" battery.
+
 ## Design notes
 
 - **Contracts** (`shared/hardware.py`): `Display`, `InputSource`, `Haptic`,
@@ -145,8 +164,9 @@ Decisions made where the spec left room:
     MenuView/Display contracts. Deliberate deltas: fonts are pygame's bundled
     `Font(None)` scaled 1.38× to match Arial's optical size (SysFont is banned
     for headless reliability); v1's `✓`/`☀` glyphs — which render as tofu
-    boxes in v1 itself — are drawn with primitives; the battery indicator is
-    omitted when no PiSugar data exists (v1 behavior); bluetooth
+    boxes in v1 itself — are drawn with primitives; the battery indicator
+    shows "--" when no PiSugar data exists (v2.1 change — v1 omitted it);
+    bluetooth
     connecting/connected are inline list markers ("…"/check) per v1, not a
     dedicated card; the battery screen says "Charging" when PiSugar reports
     it; ABOUT_VISIBLE is 4 with v1-style header + bullets.

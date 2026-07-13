@@ -154,7 +154,11 @@ class ScreenRenderer:
                                  border_radius=1)
 
         bat = status.get("battery")
-        if bat is not None:
+        if bat is None:
+            # offline PiSugar: an explicit "--" beats a silently missing icon
+            self._render(surf, "--", self._mono(11), C_DIM,
+                         SIZE - MARGIN, STATUSH // 2, "midright")
+        else:
             frac = max(0.0, min(1.0, bat / 100.0))
             bat_color = C_STATE if bat > 20 else C_ACCENT
             bw, bh = 26, 12

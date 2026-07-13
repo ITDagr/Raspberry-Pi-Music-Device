@@ -57,6 +57,16 @@ class Haptic(Protocol):
     def pulse(self) -> None: ...    # boot flourish (effect 47)
 
 
+class NullHaptic:
+    """Haptic for boots without a DRV2605L: every effect is a silent no-op,
+    so app code never needs an `if haptic:` check."""
+
+    def tick(self) -> None: pass
+    def click(self) -> None: pass
+    def back(self) -> None: pass
+    def pulse(self) -> None: pass
+
+
 class Player(Protocol):
     def play_track(self, index: int) -> None: ...
     def toggle(self) -> None: ...

@@ -115,6 +115,14 @@ def test_about_draws(renderer):
     assert _frac_non_bg(s) >= 0.02
 
 
+def test_status_bar_offline_battery(renderer):
+    """No PiSugar data: the header must render an explicit '--'."""
+    s = _surface()
+    renderer.draw(s, MENU, {"clock": "12:34", "battery": None, "charging": None})
+    top_right = pygame.Rect(scr.SIZE - 60, 0, 60, scr.STATUSH)
+    assert _rect_has_color(s, top_right, scr.MUTED), "header shows no '--' marker"
+
+
 def test_display_test_pattern(renderer):
     """The --display-test pattern: border on every edge, exact R/G/B bars."""
     s = _surface()

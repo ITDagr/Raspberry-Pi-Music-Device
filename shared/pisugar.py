@@ -1,10 +1,14 @@
 """device v2 — PiSugar battery + RTC polling with silent fallback.
 
 Talks to the PiSugar daemon's text protocol on 127.0.0.1:8423 ("get battery",
-"get rtc_time", "get battery_charging"). On a Mac (or a Pi without PiSugar)
-every query fails silently: get_battery()/get_charging() return None and
-get_time() falls back to the system clock. Assignments are plain attribute
-writes guarded by the GIL — no lock needed.
+"get rtc_time", "get battery_charging"). One boot-time TCP probe with a
+short timeout decides the mode: absent (a Mac, or a Pi without a PiSugar)
+means offline — get_battery()/get_charging() return None (the header
+renders "--"), get_time() is the system clock, refresh() is a no-op, and
+the only traffic is a silent re-probe every config.PISUGAR_REPROBE_S.
+Exactly one info line is printed when the probe fails; there are no retry
+storms and no repeated logs. Both targets share this module unchanged.
+Assignments are plain attribute writes guarded by the GIL — no lock needed.
 """
 from __future__ import annotations
 
@@ -18,6 +22,7 @@ from shared import config
 _battery: int | None = None
 _charging: bool | None = None
 _rtc_offset: float | None = None  # rtc_epoch - system_epoch at last poll
+_available = False                # set by the boot probe in the poll thread
 _wake = threading.Event()
 _started = False
 
@@ -61,10 +66,29 @@ def _poll_once() -> None:
             pass
 
 
+def _probe() -> bool:
+    """One TCP connect with a short timeout: is the daemon there at all?"""
+    try:
+        with socket.create_connection(
+            (config.PISUGAR_HOST, config.PISUGAR_PORT), timeout=config.PISUGAR_TIMEOUT_S
+        ):
+            return True
+    except OSError:
+        return False
+
+
 def _run(interval: float) -> None:
+    global _available
+    _available = _probe()
+    if not _available:
+        print("pisugar: not detected — offline mode (system clock, battery --)")
     while True:
-        _poll_once()
-        _wake.wait(interval)
+        if _available:
+            _poll_once()
+            _wake.wait(interval)
+        else:
+            _wake.wait(config.PISUGAR_REPROBE_S)  # silent re-probe, >= 5 min apart
+            _available = _probe()
         _wake.clear()
 
 
@@ -78,8 +102,10 @@ def start_polling(interval: float = config.PISUGAR_POLL_S) -> None:
 
 
 def refresh() -> None:
-    """Force an immediate poll (wakes the poll thread)."""
-    _wake.set()
+    """Force an immediate poll (wakes the poll thread). No-op while offline —
+    waking the thread early would turn the 5-minute re-probe into a storm."""
+    if _available:
+        _wake.set()
 
 
 def get_battery() -> int | None:

@@ -63,14 +63,14 @@ def main() -> int:
     from shared.hardware import HardwareBundle
     from pi import bluetooth_pi, library_mpd
     from pi.display_pi import DisplayPi
-    from pi.haptic_pi import HapticPi
+    from pi.haptic_pi import make_haptic
     from pi.input_pi import ANOInput
     from pi.player_mpd import PlayerMPD
 
     pisugar.start_polling()
     tracks = library_mpd.load_tracks()
     print(f"device v2 — Pi, {len(tracks)} tracks from MPD")
-    hw = HardwareBundle(DisplayPi(), ANOInput(), HapticPi(), PlayerMPD(tracks))
+    hw = HardwareBundle(DisplayPi(), ANOInput(), make_haptic(), PlayerMPD(tracks))
     try:
         app.run(hw, tracks, bluetooth_pi)
     except KeyboardInterrupt:
