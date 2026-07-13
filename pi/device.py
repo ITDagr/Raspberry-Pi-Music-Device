@@ -1,6 +1,10 @@
 """device v2 — Raspberry Pi launcher.
 
-Run it:      python3 pi/device.py     (or via systemd/pimusicdevice.service)
+Run it:       python3 pi/device.py    (or via systemd/pimusicdevice.service)
+Display test: python3 pi/device.py --display-test
+              (static pattern: 1px border, TL/TR/BL/BR, UP arrow, R/G/B
+               bars — any offset, rotation, or color-order mistake is
+               visible in one second; Ctrl-C to exit)
 
 Sets SDL's dummy video/audio drivers (the ST7789 gets frames over SPI, MPD
 owns the audio), builds the real hardware drivers, and hands everything to
@@ -23,6 +27,31 @@ os.environ.setdefault("SDL_AUDIODRIVER", "dummy")
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
+
+
+def display_test() -> int:
+    import time
+
+    import pygame
+
+    pygame.init()
+    from shared import config
+    from shared.screen import SIZE, ScreenRenderer
+    from pi.display_pi import DisplayPi
+
+    surface = pygame.Surface((SIZE, SIZE), depth=24)
+    ScreenRenderer().draw_display_test(surface)
+    display = DisplayPi()
+    display.push_frame(surface)
+    print(f"display test — profile {config.DISPLAY_PROFILE}: "
+          "border on all edges, TL/TR/BL/BR in the corners, arrow points up, "
+          "bars read R/G/B top to bottom. Ctrl-C to exit.")
+    try:
+        while True:
+            time.sleep(1)
+    except KeyboardInterrupt:
+        pass
+    return 0
 
 
 def main() -> int:
@@ -50,4 +79,6 @@ def main() -> int:
 
 
 if __name__ == "__main__":
+    if "--display-test" in sys.argv:
+        sys.exit(display_test())
     sys.exit(main())

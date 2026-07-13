@@ -21,16 +21,45 @@ STATE_PATH = (
 )
 AUTOSAVE_INTERVAL_S = 10.0      # save while playing, every N seconds
 
-# --- display: ST7789V 240x240 over SPI0 -------------------------------------
-SPI_BUS = 0                     # match your wiring
-SPI_DEVICE = 0                  # CE0 / GPIO8  # match your wiring
-SPI_SPEED_HZ = 62_500_000
-PIN_DC = 25                     # data/command  # match your wiring
-PIN_RST = 27                    # reset         # match your wiring
-PIN_BL = 18                     # backlight     # match your wiring
+# --- display: ST7789 TFT via the Adafruit EYESPI Pi Beret (#5783) -----------
+# The Beret is a HAT: every pin below is fixed by its routing, not user
+# wiring. (Also on the Beret, unused here: touch CS on CE1, touch IRQ on
+# GPIO 24, e-ink busy on GPIO 17.) The backlight jumper is assumed intact.
+SPI_BUS = 0                     # Beret-fixed
+SPI_DEVICE = 0                  # display CS on SPI0 CE0 — Beret-fixed
+PIN_DC = 25                     # data/command — Beret-fixed
+PIN_RST = 27                    # reset — Beret-fixed
+PIN_BL = 18                     # backlight, PWM-capable — Beret-fixed
 BACKLIGHT_PWM_HZ = 1000         # duty = level * 100
-DISPLAY_X_OFFSET = 0            # some 240x240 panels need an offset
-DISPLAY_Y_OFFSET = 0
+
+# Panel profiles. The ST7789 RAM is 240x320; a 240x240 panel shows a window
+# of it, so the offsets/rotation below are part of the panel's identity —
+# wrong values mean an 80px garbage band or a wrapped image. Values are
+# Adafruit's canonical Python init for each product; do not tune by eye.
+DISPLAY_PROFILE = "adafruit_154_240x240"
+DISPLAY_PROFILES = {
+    # Adafruit 1.54" 240x240 wide-angle IPS TFT, EYESPI connector
+    "adafruit_154_240x240": {
+        "width": 240, "height": 240,
+        "x_offset": 0, "y_offset": 80,
+        "rotation": 180,            # MADCTL flip; offsets are RAM-window coords
+        "invert": True,             # IPS panels want INVON
+        "baudrate": 62_500_000,     # ~15 ms/frame; see SPI_SPEED_FALLBACK_HZ
+    },
+    # Adafruit 1.3" 240x240 IPS TFT (same controller window)
+    "adafruit_13_240x240": {
+        "width": 240, "height": 240,
+        "x_offset": 0, "y_offset": 80,
+        "rotation": 180,
+        "invert": True,
+        "baudrate": 62_500_000,
+    },
+}
+# At 24 MHz a full 240x240x16-bit frame takes ~38 ms (caps the UI at ~26 fps);
+# at 62.5 MHz it's ~15 ms. If `--display-test` shows artifacts at 62.5 MHz,
+# set the active profile's baudrate to this fallback.
+SPI_SPEED_FALLBACK_HZ = 24_000_000
+SPI_SPEED_HZ = DISPLAY_PROFILES[DISPLAY_PROFILE]["baudrate"]
 
 # --- input: Adafruit ANO rotary encoder on seesaw ---------------------------
 SEESAW_ADDR = 0x49              # match your wiring

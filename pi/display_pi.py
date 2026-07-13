@@ -1,9 +1,12 @@
-"""device v2 — ST7789V 240x240 over SPI0 + PWM backlight.
+"""device v2 — ST7789 via the EYESPI Pi Beret: SPI0 + PWM backlight.
 
-Full-frame RGB565 pushes: a 240x240x2 frame is ~115 KB, ~7.4 ms on the wire
-at 62.5 MHz, comfortably 30 fps. Backlight is RPi.GPIO PWM at 1 kHz with
-duty = level x 100. spidev/RPi.GPIO/numpy are imported lazily so this module
-loads on a Mac.
+Panel geometry (offsets, rotation, inversion, baudrate) comes from the
+active config.DISPLAY_PROFILES entry — the same values as Adafruit's
+canonical Python init for each panel. Raw spidev keeps the fast
+numpy→RGB565 full-frame path: a 240x240x2 frame is ~115 KB, ~15 ms on the
+wire at 62.5 MHz, comfortably 30 fps. Backlight is RPi.GPIO PWM at 1 kHz
+with duty = level x 100. spidev/RPi.GPIO/numpy are imported lazily so this
+module loads on a Mac.
 """
 from __future__ import annotations
 
@@ -14,6 +17,11 @@ import pygame
 from shared import config
 from shared.screen import SIZE
 
+# MADCTL bits for the four supported rotations (RGB order, no row/col swap
+# beyond what the rotation needs). Offsets in the profile are RAM-window
+# coordinates for that same rotation — the pair travels together.
+_MADCTL = {0: 0x00, 90: 0x60, 180: 0xC0, 270: 0xA0}
+
 
 class DisplayPi:
     def __init__(self) -> None:
@@ -23,6 +31,7 @@ class DisplayPi:
 
         self._np = numpy
         self._gpio = GPIO
+        self._profile = config.DISPLAY_PROFILES[config.DISPLAY_PROFILE]
         GPIO.setmode(GPIO.BCM)
         GPIO.setwarnings(False)
         GPIO.setup(config.PIN_DC, GPIO.OUT)
@@ -33,7 +42,7 @@ class DisplayPi:
 
         self._spi = spidev.SpiDev()
         self._spi.open(config.SPI_BUS, config.SPI_DEVICE)
-        self._spi.max_speed_hz = config.SPI_SPEED_HZ
+        self._spi.max_speed_hz = self._profile["baudrate"]
         self._spi.mode = 0
 
         self.level = 1.0
@@ -60,20 +69,21 @@ class DisplayPi:
             self._spi.writebytes(list(data))
 
     def _init_panel(self) -> None:
+        prof = self._profile
         self._cmd(0x01)              # SWRESET
         time.sleep(0.15)
         self._cmd(0x11)              # SLPOUT
         time.sleep(0.12)
         self._cmd(0x3A, 0x55)        # COLMOD: 16-bit RGB565
-        self._cmd(0x36, 0x00)        # MADCTL
-        self._cmd(0x21)              # INVON (IPS panels want inversion)
+        self._cmd(0x36, _MADCTL[prof["rotation"]])  # MADCTL
+        self._cmd(0x21 if prof["invert"] else 0x20)  # INVON / INVOFF
         self._cmd(0x13)              # NORON
         self._cmd(0x29)              # DISPON
         time.sleep(0.1)
 
     def _set_window(self) -> None:
-        x0 = config.DISPLAY_X_OFFSET
-        y0 = config.DISPLAY_Y_OFFSET
+        x0 = self._profile["x_offset"]
+        y0 = self._profile["y_offset"]
         x1, y1 = x0 + SIZE - 1, y0 + SIZE - 1
         self._cmd(0x2A, x0 >> 8, x0 & 0xFF, x1 >> 8, x1 & 0xFF)  # CASET
         self._cmd(0x2B, y0 >> 8, y0 & 0xFF, y1 >> 8, y1 & 0xFF)  # RASET

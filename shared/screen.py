@@ -421,6 +421,39 @@ class ScreenRenderer:
         self._render(surface, "Rotate wheel to adjust", self._font(11), C_DIM,
                      SIZE // 2, cy + 60, "midtop")
 
+    def draw_display_test(self, surface) -> None:
+        """Static hardware test pattern (`--display-test` on the Pi).
+
+        Reads wrong in one second if the panel init is off: the 1px border
+        vanishes on any offset error, TL/TR/BL/BR + the UP arrow expose
+        rotation/mirroring, and the labeled pure R/G/B bars expose color
+        order. Colors are deliberately raw, not DETENT tokens.
+        """
+        surface.fill((0, 0, 0))
+        white = (255, 255, 255)
+        # 1px border on all four edges
+        pygame.draw.rect(surface, white, (0, 0, SIZE, SIZE), width=1)
+        # corner labels, inset so the border stays visible
+        f = self._font(12, bold=True)
+        self._render(surface, "TL", f, white, 6, 6, "topleft")
+        self._render(surface, "TR", f, white, SIZE - 6, 6, "topright")
+        self._render(surface, "BL", f, white, 6, SIZE - 6, "bottomleft")
+        self._render(surface, "BR", f, white, SIZE - 6, SIZE - 6, "bottomright")
+        # UP arrow
+        cx = SIZE // 2
+        pygame.draw.polygon(surface, white,
+                            [(cx, 34), (cx - 16, 62), (cx + 16, 62)])
+        pygame.draw.rect(surface, white, (cx - 5, 62, 10, 18))
+        self._render(surface, "UP", f, white, cx, 88, "midtop")
+        # labeled pure R/G/B bars
+        bar_x, bar_w, bar_h = 40, SIZE - 80, 24
+        for i, (label, color) in enumerate(
+                (("R", (255, 0, 0)), ("G", (0, 255, 0)), ("B", (0, 0, 255)))):
+            y = 120 + i * (bar_h + 10)
+            pygame.draw.rect(surface, color, (bar_x, y, bar_w, bar_h))
+            self._render(surface, label, f, white,
+                         bar_x - 8, y + bar_h // 2, "midright")
+
     def draw_about_screen(self, surface, scroll: int, status: dict) -> None:
         surface.fill(C_BASE)
         self._status_bar(surface, status)

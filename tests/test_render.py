@@ -113,3 +113,19 @@ def test_about_draws(renderer):
     s = _surface()
     renderer.draw_about_screen(s, 0, STATUS)
     assert _frac_non_bg(s) >= 0.02
+
+
+def test_display_test_pattern(renderer):
+    """The --display-test pattern: border on every edge, exact R/G/B bars."""
+    s = _surface()
+    renderer.draw_display_test(s)
+    mid = scr.SIZE // 2
+    for x, y in ((mid, 0), (mid, scr.SIZE - 1), (0, mid), (scr.SIZE - 1, mid),
+                 (0, 0), (scr.SIZE - 1, scr.SIZE - 1)):
+        assert s.get_at((x, y))[:3] == (255, 255, 255), f"border missing at {(x, y)}"
+    # bar geometry from draw_display_test: x 40..SIZE-40, rows of 24px from y=120
+    for i, color in enumerate(((255, 0, 0), (0, 255, 0), (0, 0, 255))):
+        y = 120 + i * 34 + 12
+        assert s.get_at((mid, y))[:3] == color, f"bar {i} is not {color}"
+    # corner labels + arrow put text pixels inside the border
+    assert _frac_non_bg(s) >= 0.02

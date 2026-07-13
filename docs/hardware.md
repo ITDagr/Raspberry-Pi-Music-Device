@@ -5,33 +5,35 @@
 | Part | Role | Interface |
 |---|---|---|
 | Raspberry Pi Zero 2 W | host (Pi OS Bookworm Lite) | — |
-| ST7789V 1.3" 240×240 IPS TFT | screen | SPI0 @ 62.5 MHz |
+| Adafruit EYESPI Pi Beret (#5783) | HAT: display + STEMMA QT breakout | SPI0 + I²C bus 1 |
+| Adafruit 1.54" 240×240 IPS TFT (ST7789, EYESPI) | screen | SPI0 @ 62.5 MHz via EYESPI cable |
 | Adafruit ANO rotary encoder + seesaw breakout | scroll wheel + 5 buttons | I²C `0x49` |
 | DRV2605L haptic driver + LRA motor | haptics | I²C `0x5A` |
 | PiSugar 2 or 3 | battery % + RTC | TCP `127.0.0.1:8423` (its daemon) |
 | Bluetooth (built-in) | audio sinks | `bluetoothctl` |
 
-## Wiring (defaults — every pin lives in `shared/config.py`)
+## Wiring (fixed by the EYESPI Pi Beret — see `shared/config.py`)
 
-All pins are BCM numbering. If your wiring differs, edit the config —
-nothing else in the tree hardcodes hardware details.
+All pins are BCM numbering. The Beret is a HAT: seat it on the Pi's
+header, connect the display with the 18-pin EYESPI FPC cable, and the
+pins below are already routed — there is nothing to wire by hand.
 
-### ST7789 display (SPI0)
+### ST7789 display (SPI0, via the Beret's EYESPI connector)
 
-| TFT pin | Pi pin | config |
+| Signal | Pi pin (Beret-fixed) | config |
 |---|---|---|
-| VCC | 3V3 | — |
-| GND | GND | — |
-| SCL/SCK | GPIO 11 (SCLK) | SPI0 |
-| SDA/MOSI | GPIO 10 (MOSI) | SPI0 |
-| CS | GPIO 8 (CE0) | `SPI_DEVICE = 0` |
+| Display CS | SPI0 CE0 | `SPI_DEVICE = 0` |
 | DC | GPIO 25 | `PIN_DC` |
-| RST | GPIO 27 | `PIN_RST` |
-| BL (backlight) | GPIO 18 | `PIN_BL` (PWM 1 kHz, duty = level×100) |
+| Reset | GPIO 27 | `PIN_RST` |
+| Backlight | GPIO 18 | `PIN_BL` (PWM 1 kHz, duty = level×100) |
+| Touch CS / IRQ | CE1 / GPIO 24 | unused |
+| Display Busy | GPIO 17 | unused (e-ink only) |
 
-Panel quirks: some 240×240 modules need a pixel offset — set
-`DISPLAY_X_OFFSET` / `DISPLAY_Y_OFFSET`. IPS panels want inversion on
-(the driver sends `INVON`; if colors look negative, your panel differs).
+Panel geometry (offsets, rotation, inversion, SPI baudrate) comes from
+`DISPLAY_PROFILES[DISPLAY_PROFILE]` in `shared/config.py` — the default
+`adafruit_154_240x240` profile is Adafruit's canonical init for the
+1.54" panel (`y_offset=80`, `rotation=180`, `INVON`). Verify a new panel
+with `python3 pi/device.py --display-test`.
 
 ### ANO encoder (I²C, seesaw)
 

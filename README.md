@@ -46,6 +46,41 @@ Wire per [docs/hardware.md](docs/hardware.md), then follow
 install deps + MPD, clone to `/home/pi/pimusicdevice`,
 `python3 pi/device.py`, then install `systemd/pimusicdevice.service`.
 
+## Display: EYESPI Pi Beret + 1.54" TFT
+
+The screen is the **Adafruit 1.54" 240×240 wide-angle IPS TFT (ST7789,
+EYESPI connector)** attached through the **Adafruit EYESPI Pi Beret
+(#5783)** with an 18-pin EYESPI FPC cable. There is no manual display
+wiring — the Beret is a HAT and fixes every pin:
+
+| Signal | Pi pin (fixed by the Beret) |
+|---|---|
+| Display CS | SPI0 CE0 |
+| Display DC | GPIO 25 |
+| Display Reset | GPIO 27 |
+| Backlight | GPIO 18 (PWM; the Beret's backlight jumper is assumed intact) |
+| Touch CS / Touch IRQ | CE1 / GPIO 24 (unused here) |
+| Display Busy | GPIO 17 (e-ink only, unused) |
+| STEMMA QT | the Pi's default I²C bus (bus 1) |
+
+**Panel parameters** live in `DISPLAY_PROFILES` in `shared/config.py`,
+selected by `DISPLAY_PROFILE` (default `adafruit_154_240x240`): 240×240,
+`x_offset=0`, `y_offset=80`, `rotation=180`, inversion on — Adafruit's
+canonical init for this panel. The ST7789's RAM is 240×320, so wrong
+offsets show up as an 80-pixel garbage band or a wrapped image. An
+`adafruit_13_240x240` profile is kept for the older 1.3" panel.
+
+**SPI speed:** 62.5 MHz by default (~15 ms per full frame). At 24 MHz a
+frame takes ~38 ms, capping the UI at ~26 fps and making scrolling feel
+mushy. If the display shows artifacts at 62.5 MHz, set the profile's
+`baudrate` to `SPI_SPEED_FALLBACK_HZ` (24 MHz).
+
+**Display test:** `python3 pi/device.py --display-test` renders a static
+pattern — a 1-pixel border on all four edges, TL/TR/BL/BR corner labels,
+an UP arrow, and labeled pure R/G/B bars — then holds. Any offset,
+rotation, or color-order mistake is visible in one second. The same
+pattern is pixel-checked by `tests/test_render.py` on the Mac.
+
 ## Design notes
 
 - **Contracts** (`shared/hardware.py`): `Display`, `InputSource`, `Haptic`,
