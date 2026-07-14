@@ -62,6 +62,9 @@ NOWPLAYING_TICK_RECT = pygame.Rect(0, 144, SIZE, 46)         # progress + times
 ABOUT_FEATURES = [
     "Now Playing screen",
     "Artist / Album browsing",
+    "Playlists (web app)",
+    "Library web app + uploads",
+    "On-demand WiFi (battery)",
     "Shuffle mode",
     "Context-aware track advance",
     "Bluetooth audio",

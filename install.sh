@@ -118,5 +118,7 @@ sudo systemctl enable pimusicdevice pimusicdevice-powersave >/dev/null
 
 say "7/7  All set"
 echo "Done — run 'sudo reboot'; the device UI starts automatically."
-echo "Put music in $MUSIC_DIR (then 'mpc update'), and see the README's"
-echo "troubleshooting table if the screen or knob misbehaves."
+echo "To load music: open Settings -> Web App on the device and scan the"
+echo "QR code (or browse to http://device.local:8080). Manual route:"
+echo "copy files into $MUSIC_DIR and run 'mpc update'. See the README's"
+echo "troubleshooting table if the screen, knob, or web app misbehaves."

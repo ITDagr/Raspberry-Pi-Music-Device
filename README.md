@@ -2,8 +2,10 @@
 
 A pocket music player you can build without soldering: a Raspberry Pi
 Zero 2 W wearing an EYESPI Pi Beret, a 1.54" color screen, and a
-click-wheel — plus a **pixel-identical Mac simulator** so you can try it
-right now with no hardware at all.
+click-wheel. It hosts its **own library web app** — load music by
+dragging songs into a browser, no cables — and there's a
+**pixel-identical Mac simulator** so you can try everything right now
+with no hardware at all.
 
 ## Getting Started
 
@@ -24,7 +26,9 @@ right now with no hardware at all.
 
 3. A window opens: you should see a short boot animation (accent line →
    waveform → "device" wordmark) and land in a menu with a small synthetic
-   music library. Controls:
+   music library. The terminal prints the **web app** address
+   (`http://localhost:8080`) — open it to try uploads and playlists
+   against the simulator. Controls:
 
    | Key | Does |
    |---|---|
@@ -84,12 +88,26 @@ and I²C, writes a working MPD config pointing at `~/Music`, applies the
 power tweaks, and installs the boot service.
 
 **What success looks like:** after the reboot the screen plays the boot
-animation and lands in the menu. Then copy music over and index it:
+animation and lands in the menu.
 
-```sh
-scp -r ~/Music/* pi@device.local:Music/   # from your computer
-ssh pi@device.local mpc update            # tell MPD to rescan
-```
+**Load your music** (no cables, no commands):
+
+1. On the device, open **Settings → Web App** — this turns WiFi on and
+   shows a QR code.
+2. Scan the QR with your phone (or type the address it shows into any
+   browser).
+3. Drag your songs into the page. Done — they appear on the device as
+   they land, usually a song every couple of seconds.
+
+Prefer the terminal? `scp -r ~/Music/* pi@device.local:Music/` then
+`ssh pi@device.local mpc update` does the same thing.
+
+**Hear it:** the Pi Zero has no speaker or headphone jack — audio plays
+through **Bluetooth** headphones or a speaker. Put yours in pairing mode,
+pick it under **Settings → Bluetooth** on the device, and do the one-time
+audio routing setup in
+[docs/bluetooth-audio.md](docs/bluetooth-audio.md) (two commands). Then
+Music → Songs → pick anything.
 
 **The physical controls:**
 
@@ -105,6 +123,7 @@ ssh pi@device.local mpc update            # tell MPD to rescan
 
 | Symptom | Fix |
 |---|---|
+| Can't reach the web app | Is the device **on the Web App screen** (or Settings → WiFi pinned On)? WiFi is off by default to save battery — the screen is the switch. |
 | Blank screen | Reseat the EYESPI cable (latch open → cable fully in → latch closed). Then `sudo systemctl stop pimusicdevice` and run `python3 pi/device.py --display-test` — a border/arrow/RGB pattern should appear. Artifacts? Set the display profile's `baudrate` to 24 MHz in `shared/config.py`. |
 | Knob does nothing | `i2cdetect -y 1` must show `49`. If not, reseat the STEMMA QT cable at both ends. |
 | No sound | Audio goes over Bluetooth: pair your speaker in Settings → Bluetooth on the device, then route MPD per [docs/bluetooth-audio.md](docs/bluetooth-audio.md). |
@@ -480,7 +499,31 @@ Decisions made where the spec left room:
       directory; `compileall` covers `shared mac pi tools`.
     - *MPD_POLL_S* was removed with the polling it throttled; the idle
       thread's reconnect backoff is `MPD_RETRY_S`.
-19. **"Black boxes over text" root cause (fixed):** a second macOS-only bug.
+19. **v2.2 web-app decisions (WiFi transfer):**
+    - *Old state files* (index-based, pre-v2.2) restore as "no resume" —
+      they carry no stable identity to trust — and are overwritten by the
+      next save.
+    - *"Next surviving track"* after a deletion wraps around the context
+      (matching `_next_track`'s modulo advance), so playback only stops
+      when the context empties.
+    - *Mac tag truth is a JSON registry* (`<music>/.library.json`) seeded
+      from the synthetic catalog: the catalog's WAVs carry no tags, and
+      mutagen's easy interface doesn't cover WAV-ID3 — on the Pi the files
+      themselves are tagged and MPD is the truth.
+    - *Playlist API ships in Phase B* (the spec lists it under B's API);
+      Phase C adds the device menus, contexts, and tests.
+    - *Selftest music root is disposable*: a temp dir seeded with 12
+      catalog tracks, so E2E uploads/deletes never touch `mac/_audio`.
+    - *Soft-off also turns the WiFi radio off*; resume restores the
+      policy state (pinned stays pinned).
+    - *Settings rows* (Web App, WiFi) are appended last so earlier row
+      positions and the selftest's navigation stay stable.
+    - *The PIN gate* protects `/api/*` via an `X-Device-Pin` header (the
+      static page itself loads); the frontend prompts once per session.
+    - *The server is werkzeug's threaded dev server* — a deliberate fit
+      for a single-user LAN device; it supports ephemeral ports for the
+      HTTP-level tests.
+20. **"Black boxes over text" root cause (fixed):** a second macOS-only bug.
     Under the cocoa driver, plain `pygame.Surface()` inherits the display
     format, which carries an alpha mask — and SDL's blit of antialiased text
     (or any per-pixel-alpha source) onto such a surface renders solid
