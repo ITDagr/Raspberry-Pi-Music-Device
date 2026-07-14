@@ -57,12 +57,17 @@ class App:
         self.haptic = hw.haptic
         self.player = hw.player
         self.power = hw.power or AlwaysOnPowerSwitch()
+        self.radio = hw.radio  # None: WiFi not controllable, policy inert
         self.tracks = tracks
         self.bt = bluetooth_module
         self.selftest = selftest_script
         self.boots = 0  # startup-animation runs (boot + every soft-off resume)
 
-        self.ctrl = MenuController(build_default_menus(tracks))
+        self.wifi_pinned = config.WIFI_POLICY == "always_on"
+        self._wifi_drain = False       # radio held up until transfers finish
+        self._webapp_info_cache: Optional[dict] = None
+        self._webapp_info_at = 0.0
+        self.ctrl = MenuController(self._build_menus())
         self.renderer = ScreenRenderer()
         self.dimmer = ScreenDimmer(self.display.set_backlight_level,
                                    log=lambda m: print(f"dimmer  {m}"))
@@ -110,6 +115,13 @@ class App:
         return {"clock": pisugar.get_time(), "battery": pisugar.get_battery(),
                 "charging": pisugar.get_charging()}
 
+    # --- menus --------------------------------------------------------------------
+    def _build_menus(self):
+        wifi_label = None
+        if self.radio is not None:
+            wifi_label = f"WiFi: {'On' if self.wifi_pinned else 'Auto'}"
+        return build_default_menus(self.tracks, wifi_label=wifi_label)
+
     # --- track identity ---------------------------------------------------------
     def _reindex(self) -> None:
         self._id_to_index = {t.id: t.index for t in self.tracks}
@@ -138,7 +150,7 @@ class App:
     def _playlists_changed(self) -> None:
         """The playlist manifest changed (web app): rebuild the menus so
         Music -> Playlists reflects it, keeping the navigation path."""
-        self.ctrl.rebuild(build_default_menus(self.tracks))
+        self.ctrl.rebuild(self._build_menus())
         self._mark_full()
 
     def apply_library(self, new_tracks: list) -> None:
@@ -149,7 +161,7 @@ class App:
         playing_id = playing.id if playing else None
         self.tracks[:] = new_tracks
         self._reindex()
-        self.ctrl.rebuild(build_default_menus(self.tracks))
+        self.ctrl.rebuild(self._build_menus())
         self.context, pos = self._resolve_position(self.context, self.pos)
         self.pos = pos if pos is not None else 0
         if playing_id is not None and playing_id not in self._id_to_index:
@@ -340,7 +352,16 @@ class App:
             self.mode = Mode.ABOUT
         elif act == "webapp":
             self.haptic.click()
+            if self.radio is not None and not self.radio.is_on():
+                self.radio.set(True)   # on-demand policy: the screen IS the switch
+            self._webapp_info_cache = None
             self.mode = Mode.WEBAPP
+        elif act == "wifitoggle":
+            self.haptic.click()
+            self.wifi_pinned = not self.wifi_pinned
+            if self.radio is not None:
+                self.radio.set(self.wifi_pinned or self.mode is Mode.WEBAPP)
+            self.ctrl.rebuild(self._build_menus())  # refresh the row label
         elif act == "noop":
             self.haptic.click()  # hint rows: acknowledge, do nothing
         else:
@@ -431,18 +452,52 @@ class App:
         if ev in ("left", "back", "select"):
             self.haptic.back()
             self.mode = Mode.MENU
+            if (self.radio is not None and not self.wifi_pinned
+                    and config.WIFI_POLICY == "on_demand"):
+                if self._active_transfers() > 0:
+                    # keep the radio up until the upload queue drains
+                    self._wifi_drain = True
+                    self._toast("finishing transfer…")
+                else:
+                    self.radio.set(False)
+
+    @staticmethod
+    def _active_transfers() -> int:
+        try:
+            from shared.webapp import server as webapp_server
+
+            return webapp_server.active_transfers()
+        except Exception:
+            return 0
 
     def _webapp_info(self) -> dict:
+        """Facts for the Web App screen, cached ~0.5 s (get_ssid shells out
+        on the Pi; the screen polls while WiFi is coming up)."""
+        now = time.monotonic()
+        if self._webapp_info_cache and now - self._webapp_info_at < 0.5:
+            return self._webapp_info_cache
         from shared import netinfo
 
         host = "localhost" if config.IS_MAC else "device.local"
-        return {
+        info = {
             "url": f"http://{host}:{self.webapp_port}",
             "ip": netinfo.get_ip(),
             "port": self.webapp_port,
             "ssid": netinfo.get_ssid(),
             "wifi_state": "on",
         }
+        if self.radio is not None and not self.radio.is_on():
+            info["wifi_state"] = "starting"
+            info["wifi_message"] = "Turning WiFi on…"
+        elif info["ssid"] is None:
+            info["wifi_state"] = "connecting"
+            info["wifi_message"] = "Connecting to WiFi…"
+        elif info["ip"] is None:
+            info["wifi_state"] = "connecting"
+            info["wifi_message"] = f"Connecting to {info['ssid']}…"
+        self._webapp_info_cache = info
+        self._webapp_info_at = now
+        return info
 
     def _brightness_event(self, ev: str) -> None:
         if ev in ("scroll_up", "scroll_down"):
@@ -569,16 +624,20 @@ class App:
             subprocess.call(["sudo", "-n", "systemctl", "poweroff"])
             return "quit"
         print("power: soft off")
+        if self.radio is not None:
+            self.radio.set(False)  # soft-off means every radio we own is off
         self.dimmer.suspend()
         self.display.set_backlight_level(0.0)
         self.display.sleep()
         if self._soft_off_wait() == "quit":
             return "quit"
         print("power: on")
+        if self.radio is not None:
+            self.radio.set(self.wifi_pinned)  # policy state, like a fresh boot
         self.display.wake()
         self.dimmer.resume()
         # boot from scratch: fresh menus, MENU mode, animation, restore
-        self.ctrl = MenuController(build_default_menus(self.tracks))
+        self.ctrl = MenuController(self._build_menus())
         self.mode = Mode.MENU
         self._boot(surface)
         return "on"
@@ -586,6 +645,11 @@ class App:
     # --- main loop ------------------------------------------------------------------
     def run(self) -> None:
         pisugar.start_polling()
+        if self.radio is not None:
+            # WiFi is OFF by default: the radio idles at ~0.15-0.35 W and is
+            # only needed while the web app is in use (Settings -> Web App
+            # turns it on). Bluetooth audio is untouched — separate radio.
+            self.radio.set(self.wifi_pinned)
         # depth=24: a plain Surface inherits the display format, which on
         # macOS carries an alpha channel that SDL's text/alpha blits mangle
         # into solid boxes. An explicit RGB canvas sidesteps that entirely.
@@ -645,6 +709,18 @@ class App:
                 self._mark_full()
             self.player.tick()
             self._bluetooth_frame()
+
+            # on-demand WiFi: drop the radio once the upload queue drains
+            if self._wifi_drain and self._active_transfers() == 0:
+                self._wifi_drain = False
+                if (self.radio is not None and not self.wifi_pinned
+                        and self.mode is not Mode.WEBAPP):
+                    self.radio.set(False)
+            # animate/poll the Web App screen while WiFi is coming up (the
+            # info cache re-polls itself at 2 Hz; we just keep redrawing)
+            if (self.mode is Mode.WEBAPP
+                    and self._webapp_info().get("wifi_state") != "on"):
+                self._mark_full()
 
             overlay_active = now < self.vol_flash_until
             status = self._status()

@@ -10,12 +10,31 @@ frame, rebuilds TRACKS + menus, and shows the toast.
 from __future__ import annotations
 
 import threading
+import time
 import uuid
 from pathlib import Path
 
 from shared import config, pisugar, playlists
 from shared.hardware import track_id
 from shared.webapp.store import BaseLibraryStore, StoreError
+
+# In-flight transfer count: the on-demand WiFi policy holds the radio up
+# until this drains. Plain int mutations under the GIL via the helpers.
+_active_transfers = 0
+
+
+def active_transfers() -> int:
+    return _active_transfers
+
+
+def _begin_transfer() -> None:
+    global _active_transfers
+    _active_transfers += 1
+
+
+def _end_transfer() -> None:
+    global _active_transfers
+    _active_transfers = max(0, _active_transfers - 1)
 
 
 def _track_json(t) -> dict:
@@ -73,13 +92,25 @@ def create_app(store: BaseLibraryStore, notify):
 
     @app.post("/api/upload")
     def api_upload():
-        f = request.files.get("file")
-        if f is None or not f.filename:
-            return jsonify(error="no file in the request"), 400
-        tmp = store.root / ".incoming" / f"up_{uuid.uuid4().hex}"
-        f.save(str(tmp))
-        replace = request.args.get("replace") == "1"
-        added = store.add_upload(tmp, f.filename, replace=replace)
+        _begin_transfer()
+        try:
+            f = request.files.get("file")
+            if f is None or not f.filename:
+                return jsonify(error="no file in the request"), 400
+            tmp = store.root / ".incoming" / f"up_{uuid.uuid4().hex}"
+            # stream to disk in ~64 KB chunks with explicit GIL yields so
+            # the render loop (same process, other thread) never hitches
+            with open(tmp, "wb") as out:
+                while True:
+                    chunk = f.stream.read(config.UPLOAD_CHUNK)
+                    if not chunk:
+                        break
+                    out.write(chunk)
+                    time.sleep(0)  # cooperative yield
+            replace = request.args.get("replace") == "1"
+            added = store.add_upload(tmp, f.filename, replace=replace)
+        finally:
+            _end_transfer()
         push_library(f"Added: {added['title']}")
         return jsonify(track=_track_json(added)), 201
 
@@ -143,11 +174,14 @@ def create_app(store: BaseLibraryStore, notify):
     def api_status():
         import socket
 
+        from shared import netinfo
+
         s = store.stats()
         return jsonify(name=socket.gethostname().split(".")[0],
                        tracks=s["tracks"], disk_free=s["disk_free"],
                        disk_total=s["disk_total"],
-                       battery=pisugar.get_battery())
+                       battery=pisugar.get_battery(),
+                       wifi=netinfo.get_ssid())
 
     return app
 

@@ -117,6 +117,15 @@ class Player(Protocol):
         """Latches True exactly once when a track ends naturally, then resets."""
 
 
+class Radio(Protocol):
+    """The WiFi radio switch (rfkill on the Pi, a logged fake on the Mac).
+    Blocking WiFi never touches Bluetooth — separate rfkill classes — so
+    Bluetooth audio is completely unaffected by the on-demand policy."""
+
+    def is_on(self) -> bool: ...
+    def set(self, on: bool) -> None: ...
+
+
 class PowerSwitch(Protocol):
     def is_on(self) -> bool:
         """Debounced position of the (soft) power switch."""
@@ -136,3 +145,4 @@ class HardwareBundle:
     haptic: Haptic
     player: Player
     power: Optional[PowerSwitch] = None  # None ≙ AlwaysOnPowerSwitch
+    radio: Optional[Radio] = None        # None ≙ radio not controllable

@@ -122,6 +122,13 @@ WEBAPP_PORT = 8080
 WEBAPP_MAX_UPLOAD_MB = 200      # per-file cap; oversize returns 413
 WEBAPP_PIN = None               # e.g. "1234": require a PIN on shared networks
 TRASH_KEEP_DAYS = 7             # deleted tracks sit in <music>/.trash this long
+# A connected-but-idle WiFi radio draws ~0.15-0.35 W — roughly 20-30% of this
+# device's total budget — and is only needed while the web app is in use.
+#   "on_demand"  (default) radio off until Settings -> Web App opens it;
+#                leaving the screen turns it off (transfers finish first)
+#   "always_on"  radio stays up (same as the Settings -> WiFi pin)
+WIFI_POLICY = "on_demand"
+UPLOAD_CHUNK = 64 * 1024        # streamed-upload chunk size (cooperative yields)
 PLAYLISTS_PATH = (
     str(_REPO_ROOT / ".device_playlists.json") if IS_MAC
     else "/home/pi/.device_playlists.json"

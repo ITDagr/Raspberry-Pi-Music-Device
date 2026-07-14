@@ -35,7 +35,14 @@ function pinHeaders() {
 
 async function api(path, options = {}, retried = false) {
   options.headers = { ...(options.headers || {}), ...pinHeaders() };
-  const res = await fetch(path, options);
+  let res;
+  try {
+    res = await fetch(path, options);
+  } catch (e) {
+    setOffline(true);  // network-level failure: the device dropped WiFi
+    throw e;
+  }
+  setOffline(false);
   let body = {};
   try { body = await res.json(); } catch { /* non-JSON error page */ }
   if (res.status === 401 && !retried) {
@@ -62,6 +69,10 @@ document.querySelectorAll(".tab").forEach((tab) => {
 
 /* ————— header status ————— */
 
+function setOffline(off) {
+  $("#offline-banner").hidden = !off;
+}
+
 async function refreshStatus() {
   try {
     const s = await api("/api/status");
@@ -71,7 +82,12 @@ async function refreshStatus() {
     const bat = $("#stat-battery");
     bat.textContent = s.battery == null ? "battery --" : `battery ${s.battery}%`;
     bat.classList.toggle("good", s.battery != null && s.battery > 20);
-  } catch { /* header is best-effort */ }
+    $("#stat-wifi").textContent = s.wifi ? `wifi ${s.wifi}` : "wifi --";
+    setOffline(false);
+  } catch (e) {
+    // a dead connection means the device's WiFi dropped (on-demand policy)
+    if (e instanceof TypeError) setOffline(true);
+  }
 }
 
 /* ————— library ————— */
@@ -272,6 +288,7 @@ function uploadOne(file, replace = false) {
   xhr.addEventListener("error", () => {
     stateEl.textContent = "connection failed";
     stateEl.className = "up-state err";
+    setOffline(true);
   });
   const form = new FormData();
   form.append("file", file);

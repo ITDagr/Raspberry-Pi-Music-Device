@@ -179,29 +179,52 @@ The device hosts its own **library web app** — browse, upload, retag,
 delete, and build playlists from any browser on the same WiFi. Nothing to
 install on your computer or phone.
 
-1. **Get the Pi on WiFi.** This happened at flash time: Raspberry Pi
-   Imager's settings dialog wrote your WiFi name and password onto the SD
-   card (Getting Started, Track B, step 2). No WiFi setup happens on the
-   device itself.
-2. On the device, open **Settings → Web App**. The screen shows the
-   address, the numeric IP as a fallback, the WiFi network, and a **QR
-   code** — point a phone camera at it and you're in.
-3. Or type it yourself: **`http://device.local:8080`** from any Mac,
-   iPhone, or iPad on the same network (`install.sh` sets the hostname to
-   `device`, and Pi OS's avahi serves `device.local`). On the Mac
-   simulator the same screen and the terminal show `http://localhost:8080`.
+**How transfer works, in plain language:** the device runs a small
+website. Your browser is a remote control for files that live *on the
+device* — dragging a song into the page sends it straight over WiFi
+(a typical song lands in 1–3 seconds), and nothing is stored on your
+computer. That's also why it beats Bluetooth file transfer: WiFi is
+10–50× faster, and there's no pairing or app.
+
+1. **On the device, open Settings → Web App.** This switches the WiFi
+   radio on — you'll see "Turning WiFi on… / Connecting…" for a few
+   seconds, then the screen shows the address, the numeric IP, the
+   network name, and a **QR code**. Point a phone camera at it and
+   you're in.
+2. Or type the address: **`http://device.local:8080`** from any Mac,
+   iPhone, or iPad on the same WiFi (the network you gave Raspberry Pi
+   Imager at flash time — that is how the Pi knows your WiFi;
+   `install.sh` set the hostname to `device`). The Mac simulator prints
+   `http://localhost:8080` instead.
+3. When you leave the Web App screen, WiFi turns back **off** — it's the
+   single biggest battery saving in the project (an idle radio eats
+   20–30 % of the budget). An upload still in flight finishes first
+   ("finishing transfer…" toast). **Bluetooth audio is unaffected** —
+   it's a separate radio.
+
+Want WiFi to stay up (e.g. for a long library session)? **Settings →
+WiFi** pins it on until you toggle it back to Auto.
 
 The web server runs inside the device app that systemd already starts —
 there is nothing extra to install, start, or keep running.
 
 **If `device.local:8080` doesn't load:**
 
-1. Same WiFi? The computer/phone must be on the network you gave Imager.
-2. Try the numeric IP from the device's Web App screen
+1. **Is the device on the Web App screen (or the WiFi toggle pinned
+   on)?** WiFi is off by default — the browser can't reach a radio
+   that's asleep. The page itself will tell you when this happens
+   mid-session.
+2. Same WiFi? The computer/phone must be on the network you gave Imager.
+3. Try the numeric IP from the device's Web App screen
    (`http://<ip>:8080`).
-3. `ping device.local` — no answer usually means the WiFi credentials
+4. `ping device.local` — no answer usually means the WiFi credentials
    were mistyped at flash time; re-flash with Imager.
-4. Check your router's client list for a device named `device`.
+5. Check your router's client list for a device named `device`.
+
+**Honest performance note:** very large uploads may cause a slight UI
+stutter on the device (the web server shares the process with the UI;
+uploads stream in 64 KB chunks to keep it minimal). Playback is
+unaffected on the Pi — MPD plays audio in its own separate process.
 
 **Security note:** the app is LAN-only and unauthenticated by default —
 fine on a home network. On a shared network, set `WEBAPP_PIN` in

@@ -54,6 +54,7 @@ from mac.haptic_mock import MockHaptic  # noqa: E402
 from mac.input_mock import MockANOInput  # noqa: E402
 from mac.player_mac import PlayerMac  # noqa: E402
 from mac.power_mock import MockPowerSwitch  # noqa: E402
+from mac.radio_mock import MockRadio  # noqa: E402
 
 
 class SelfTestError(AssertionError):
@@ -180,6 +181,8 @@ class SelfTestRunner:
         expect(st["battery"] is None,
                f"expected battery None with PiSugar offline, got {st['battery']}")
         expect(isinstance(a.haptic, NullHaptic), "expected NullHaptic installed")
+        expect(not a.radio.is_on(),
+               "WiFi radio must be OFF at boot under the on_demand policy")
         press("select"); yield 0  # home -> Music
         expect(a.ctrl.current_name == "music", f"expected music menu, got {a.ctrl.current_name}")
         press("scroll_down", "scroll_down", "scroll_down", "select"); yield 0  # -> Songs
@@ -266,12 +269,27 @@ class SelfTestRunner:
         press("back"); yield 0
         expect(a.mode is Mode.MENU, "back should leave bluetooth")
 
-        # --- Web App screen: URL + IP + QR --------------------------------------
-        press("scroll_up", "select"); yield 0.2  # wrap to Web App (last row)
+        # --- Web App screen + Phase F radio policy -------------------------------
+        press("scroll_up", "scroll_up", "select"); yield 0.2  # wrap to Web App
         expect(a.mode is Mode.WEBAPP, f"expected WEBAPP, got {a.mode}")
+        expect(a.radio.is_on(), "entering the Web App screen must power WiFi on")
         self._snap("webapp")
-        press("back"); yield 0
+        # leave while a transfer is in flight: the radio is held up
+        from shared.webapp import server as webapp_server
+        webapp_server._begin_transfer()  # a simulated in-flight upload
+        press("back"); yield 0.3
         expect(a.mode is Mode.MENU, "back should leave the web app screen")
+        expect(a.radio.is_on(), "radio must stay up while a transfer is in flight")
+        webapp_server._end_transfer()
+        yield 0.3
+        expect(not a.radio.is_on(), "radio must drop once the queue drains")
+        # the WiFi pin: On until toggled back to Auto
+        press("scroll_down", "select"); yield 0.2  # WiFi row, below Web App
+        expect(a.wifi_pinned and a.radio.is_on(),
+               "WiFi toggle must pin the radio on")
+        press("select"); yield 0.2
+        expect(not a.wifi_pinned and not a.radio.is_on(),
+               "toggling back must unpin and drop the radio")
 
         # --- Phase 3a: wake only by center press -------------------------------
         old_dim, old_sleep = config.DIM_AFTER_S, config.SLEEP_AFTER_S
@@ -437,7 +455,7 @@ def _run_selftest(tracks, dump_dir: str | None = None) -> int:
     # NullHaptic = the failed-haptics-probe result; the whole run must work
     # with it installed, proving no code path needs a real motor
     hw = HardwareBundle(display, inp, NullHaptic(), PlayerMac(tracks),
-                        power=MockPowerSwitch())
+                        power=MockPowerSwitch(), radio=MockRadio())
     t0 = time.monotonic()
     try:
         app.run(hw, tracks, bluetooth_mac, selftest_script=runner,
@@ -483,7 +501,7 @@ def main() -> int:
     print("Haptic events print here:")
     power = MockPowerSwitch()
     hw = HardwareBundle(MockDisplay(), MockANOInput(power), MockHaptic(),
-                        PlayerMac(tracks), power=power)
+                        PlayerMac(tracks), power=power, radio=MockRadio())
     try:
         app.run(hw, tracks, bluetooth_mac, web_events=web_events,
                 webapp_port=webapp_port)

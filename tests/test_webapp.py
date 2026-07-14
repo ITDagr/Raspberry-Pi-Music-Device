@@ -129,6 +129,21 @@ def test_trash_purge_honors_age(env, tmp_path):
     assert not item.exists()
 
 
+def test_chunked_upload_streams_intact(env):
+    """A multi-megabyte upload goes through the 64 KB cooperative-yield
+    streaming path and must land byte-identical."""
+    import hashlib
+
+    _, client, _ = env
+    blob = wav_bytes(seconds=60)  # ~2.6 MB, dozens of chunks
+    assert len(blob) > 10 * config.UPLOAD_CHUNK
+    r = _upload(client, blob, "long.wav")
+    assert r.status_code == 201
+    tid = r.get_json()["track"]["id"]
+    stored = (Path(config.MUSIC_ROOT) / tid).read_bytes()
+    assert hashlib.sha256(stored).digest() == hashlib.sha256(blob).digest()
+
+
 def test_status_endpoint(env):
     _, client, _ = env
     _upload(client, wav_bytes(), "one.wav")

@@ -160,7 +160,8 @@ def _slug(text: str, used: set) -> str:
 
 
 def build_default_menus(tracks: list[Track],
-                        playlist_data: dict[str, list[str]] = None) -> dict[str, Menu]:
+                        playlist_data: dict[str, list[str]] = None,
+                        wifi_label: str = None) -> dict[str, Menu]:
     if playlist_data is None:  # default: the device's manifest
         from shared import playlists as playlists_mod
 
@@ -181,14 +182,17 @@ def build_default_menus(tracks: list[Track],
         MenuItem("Songs", "menu:songs"),
         MenuItem("Shuffle", "do:shuffle"),
     ])
-    menus["settings"] = Menu("Settings", [
+    settings_rows = [
         MenuItem("Bluetooth", "mode:bluetooth"),
         MenuItem("Battery", "do:battery"),
         MenuItem("Brightness", "do:brightness"),
         MenuItem("About", "do:about"),
         # appended last so existing row positions (and muscle memory) hold
         MenuItem("Web App", "do:webapp"),
-    ])
+    ]
+    if wifi_label:  # the on-demand WiFi pin toggle (targets with a radio)
+        settings_rows.append(MenuItem(wifi_label, "do:wifitoggle"))
+    menus["settings"] = Menu("Settings", settings_rows)
 
     # Artists -> artist_<slug> menus (tracks in album/track order)
     artist_rows = []

@@ -110,8 +110,10 @@ def main() -> int:
         except Exception as e:
             print(f"webapp: disabled ({e})")
             web_events = None
+    from pi.radio_pi import RadioPi
+
     hw = HardwareBundle(DisplayPi(), ANOInput(), make_haptic(), PlayerMPD(tracks),
-                        power=PowerSwitchPi())
+                        power=PowerSwitchPi(), radio=RadioPi())
     try:
         app.run(hw, tracks, bluetooth_pi, web_events=web_events,
                 webapp_port=webapp_port)
