@@ -75,8 +75,8 @@ def test_bluetooth_is_a_mode(ctrl):
 
 def test_play_payload_from_songs(ctrl):
     ctrl.select()                            # music
-    ctrl.scroll_down(); ctrl.scroll_down()
-    ctrl.select()                            # songs
+    ctrl.scroll_down(); ctrl.scroll_down(); ctrl.scroll_down()
+    ctrl.select()                            # songs (after Playlists/Artists/Albums)
     assert ctrl.current_name == "songs"
     assert ctrl.select() == "action"
     assert ctrl.last_action.startswith("play:")
@@ -105,7 +105,7 @@ def test_songs_context_sorted_artist_title(ctrl):
 def test_view_window_and_scroll(tracks):
     ctrl = MenuController(build_default_menus(tracks))
     ctrl.select()                            # music
-    ctrl.scroll_down(); ctrl.scroll_down()
+    ctrl.scroll_down(); ctrl.scroll_down(); ctrl.scroll_down()
     ctrl.select()                            # songs, 6 rows > 5 visible
     for _ in range(5):
         ctrl.scroll_down()

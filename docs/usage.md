@@ -52,6 +52,10 @@ Title, artist, progress bar with knob, elapsed/remaining timecodes, a
 
 ## Settings screens
 
+- **Playlists** (Music → Playlists): one submenu per playlist, in the
+  order set in the web app — that order is the play order. "Shuffle
+  playlist" at the top randomizes within it. Playlists are created and
+  edited in the web app only; an empty one shows a hint row.
 - **Bluetooth**: entering rescans (~6 s on the Pi). Select a device to
   connect; "…" marks connecting, a green check marks connected. Back from
   a connected view returns to the list; back again leaves. Audio routing

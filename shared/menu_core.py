@@ -159,7 +159,12 @@ def _slug(text: str, used: set) -> str:
     return slug
 
 
-def build_default_menus(tracks: list[Track]) -> dict[str, Menu]:
+def build_default_menus(tracks: list[Track],
+                        playlist_data: dict[str, list[str]] = None) -> dict[str, Menu]:
+    if playlist_data is None:  # default: the device's manifest
+        from shared import playlists as playlists_mod
+
+        playlist_data = playlists_mod.load()
     menus: dict[str, Menu] = {}
     used: set = set()
 
@@ -170,6 +175,7 @@ def build_default_menus(tracks: list[Track]) -> dict[str, Menu]:
         MenuItem("Settings", "menu:settings"),
     ])
     menus["music"] = Menu("Music", [
+        MenuItem("Playlists", "menu:playlists"),
         MenuItem("Artists", "menu:artists"),
         MenuItem("Albums", "menu:albums"),
         MenuItem("Songs", "menu:songs"),
@@ -214,5 +220,24 @@ def build_default_menus(tracks: list[Track]) -> dict[str, Menu]:
     # Songs: every track sorted (artist, title)
     songs = sorted(tracks, key=lambda t: (t.artist.lower(), t.title.lower()))
     menus["songs"] = Menu("Songs", [MenuItem(t.title, f"do:play:{t.index}") for t in songs])
+
+    # Playlists -> playlist_<slug> menus; manifest order IS the play order.
+    # Ids referencing deleted tracks are skipped defensively (the API prunes
+    # them, but a stale manifest must never crash a boot).
+    by_id = {t.id: t for t in tracks}
+    playlist_rows = []
+    for name in sorted(playlist_data, key=str.lower):
+        menu_name = f"playlist_{_slug(name, used)}"
+        members = [by_id[tid] for tid in playlist_data[name] if tid in by_id]
+        if members:
+            rows = [MenuItem("Shuffle playlist", f"do:plshuffle:{menu_name}")]
+            rows += [MenuItem(t.title, f"do:play:{t.index}") for t in members]
+        else:
+            rows = [MenuItem("(empty — add songs in the web app)", "noop")]
+        menus[menu_name] = Menu(name, rows)
+        playlist_rows.append(MenuItem(name, f"menu:{menu_name}"))
+    menus["playlists"] = Menu(
+        "Playlists",
+        playlist_rows or [MenuItem("(none — create one in the web app)", "noop")])
 
     return menus

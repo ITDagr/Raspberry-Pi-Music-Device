@@ -289,7 +289,8 @@ class App:
             index = int(act.split(":", 1)[1])
             tid = self.tracks[index].id
             name = self.ctrl.current_name
-            if name == "songs" or name.startswith(("artist_", "album_")):
+            if name == "songs" or name.startswith(("artist_", "album_",
+                                                   "playlist_")):
                 self.context = [self.tracks[i].id for i in
                                 extract_play_context(self.ctrl.menus[name])]
                 self.shuffle = False
@@ -305,6 +306,21 @@ class App:
                 return
             self.shuffle = True
             self.context = [t.id for t in self.tracks]
+            self.pos = random.randrange(len(self.context))
+            self._play(self.context[self.pos])
+            self.mode = Mode.NOWPLAYING
+        elif act.startswith("plshuffle:"):
+            # shuffle within one playlist: its order is the context, the
+            # cursor lands anywhere in it
+            menu_name = act.split(":", 1)[1]
+            menu = self.ctrl.menus.get(menu_name)
+            ids = [self.tracks[i].id for i in
+                   extract_play_context(menu)] if menu else []
+            if not ids:
+                return
+            self.haptic.click()
+            self.shuffle = True
+            self.context = ids
             self.pos = random.randrange(len(self.context))
             self._play(self.context[self.pos])
             self.mode = Mode.NOWPLAYING

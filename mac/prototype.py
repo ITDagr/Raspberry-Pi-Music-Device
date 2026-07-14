@@ -150,7 +150,7 @@ class SelfTestRunner:
         expect(isinstance(a.haptic, NullHaptic), "expected NullHaptic installed")
         press("select"); yield 0  # home -> Music
         expect(a.ctrl.current_name == "music", f"expected music menu, got {a.ctrl.current_name}")
-        press("scroll_down", "scroll_down", "select"); yield 0  # -> Songs
+        press("scroll_down", "scroll_down", "scroll_down", "select"); yield 0  # -> Songs
         expect(a.ctrl.current_name == "songs", f"expected songs menu, got {a.ctrl.current_name}")
         self._snap("menu_songs")
         press("scroll_down", "scroll_down", "scroll_down", "select"); yield 0  # track 3
@@ -309,8 +309,10 @@ def _run_selftest(tracks, dump_dir: str | None = None) -> int:
     config.STARTUP_DURATION_S = 0.2   # keep the run inside the time budget
     config.ENCODER_ACCEL = False      # scripted detents fire faster than 1 s
     config.PISUGAR_PORT = 1           # force the boot probe to fail: offline mode
-    if os.path.exists(config.STATE_PATH):
-        os.remove(config.STATE_PATH)
+    config.PLAYLISTS_PATH = config.STATE_PATH + ".selftest-playlists"
+    for stray in (config.STATE_PATH, config.PLAYLISTS_PATH):
+        if os.path.exists(stray):
+            os.remove(stray)
     if dump_dir:
         os.makedirs(dump_dir, exist_ok=True)
     inp = ScriptedInput()
