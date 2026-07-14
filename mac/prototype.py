@@ -96,15 +96,47 @@ class SelfTestRunner:
     """
 
     def __init__(self, inp: ScriptedInput, tracks, dump_dir: str | None = None,
-                 display: CaptureDisplay | None = None) -> None:
+                 display: CaptureDisplay | None = None,
+                 port: int | None = None) -> None:
         self.inp = inp
         self.songs_ctx = extract_play_context(build_default_menus(tracks)["songs"])
         self.songs_ids = [tracks[i].id for i in self.songs_ctx]
         self.dump_dir = dump_dir
         self.display = display
+        self.port = port                 # the ephemeral web app port (Phase E)
+        self.e2e_deleted_id = None
         self._gen = None
         self._resume_at = 0.0
         self.done = False
+
+    # --- real-HTTP driver for the web app E2E ------------------------------------
+    def _http(self, method: str, path: str, payload: dict | None = None) -> dict:
+        import urllib.request
+
+        data = json.dumps(payload).encode() if payload is not None else None
+        req = urllib.request.Request(f"http://127.0.0.1:{self.port}{path}",
+                                     data=data, method=method)
+        if data is not None:
+            req.add_header("Content-Type", "application/json")
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            return json.loads(resp.read().decode())
+
+    def _http_upload(self, filename: str, blob: bytes) -> dict:
+        import urllib.request
+
+        boundary = "----deviceSelftest"
+        body = (
+            (f"--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; "
+             f"filename=\"{filename}\"\r\n"
+             "Content-Type: application/octet-stream\r\n\r\n").encode()
+            + blob + f"\r\n--{boundary}--\r\n".encode()
+        )
+        req = urllib.request.Request(
+            f"http://127.0.0.1:{self.port}/api/upload", data=body, method="POST")
+        req.add_header("Content-Type",
+                       f"multipart/form-data; boundary={boundary}")
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            return json.loads(resp.read().decode())
 
     def _snap(self, label: str, frame: pygame.Surface | None = None) -> None:
         """Save `frame` (default: the most recently pushed frame) as a PNG."""
@@ -291,6 +323,52 @@ class SelfTestRunner:
         expect(abs(a.player.elapsed - float(saved["elapsed"])) < 3.0,
                f"resumed at {a.player.elapsed:.1f}, saved {saved['elapsed']}")
         expect(a.mode is Mode.MENU, "power-on should boot into MENU")
+
+        # --- Phase E: drive the web app over real HTTP --------------------------
+        import urllib.parse
+
+        from shared.menu_core import extract_play_context as _ctx
+        from tests.audiofiles import mp3_bytes
+
+        n_before = len(a.tracks)
+        up = self._http_upload(
+            "e2e.mp3", mp3_bytes("E2E Song", "E2E Artist", "E2E Album", 1))
+        new_id = up["track"]["id"]
+        yield 0.5  # let the main loop drain the event queue
+        expect(len(a.tracks) == n_before + 1, "TRACKS did not grow after upload")
+        expect(any(t.id == new_id for t in a.tracks),
+               f"uploaded id {new_id} missing from TRACKS")
+        expect(a.toast_msg.startswith("Added"),
+               f"expected an Added toast, got {a.toast_msg!r}")
+        labels = [i.label for i in a.ctrl.menus["songs"].items]
+        expect("E2E Song" in labels, "uploaded song missing from the Songs menu")
+        self._snap("webapp_upload_toast")
+
+        # playlist of 3 (incl. the upload), deliberately reordered
+        others = [t.id for t in a.tracks if t.id != new_id][:2]
+        order = [others[1], new_id, others[0]]
+        self._http("POST", "/api/playlists", {"name": "E2E"})
+        self._http("PATCH", "/api/playlists/E2E", {"tracks": order})
+        yield 0.5
+        menu = a.ctrl.menus.get("playlist_e2e")
+        expect(menu is not None, "playlist menu missing after creation")
+        expect(menu.items[0].label == "Shuffle playlist", "shuffle row missing")
+        got = [a.tracks[i].id for i in _ctx(menu)]
+        expect(got == order,
+               f"device playlist order {got} != web order {order}")
+
+        # delete the uploaded track: gone from menus, playlist, and state
+        self._http("DELETE",
+                   "/api/tracks/" + urllib.parse.quote(new_id, safe="/"))
+        yield 0.5
+        expect(all(t.id != new_id for t in a.tracks),
+               "deleted track still in TRACKS")
+        labels = [i.label for i in a.ctrl.menus["songs"].items]
+        expect("E2E Song" not in labels, "deleted song still in the Songs menu")
+        remaining = self._http("GET", "/api/playlists")["playlists"]["E2E"]
+        expect(remaining == [others[1], others[0]],
+               f"playlist not pruned correctly: {remaining}")
+        self.e2e_deleted_id = new_id
         # StopIteration -> runner pushes quit; state file checked afterwards
 
     def verify_state_file(self) -> None:
@@ -310,9 +388,21 @@ class SelfTestRunner:
                     f"(full state: {data})")
         if data.get("context") != self.songs_ids:
             raise SelfTestError("state context does not match the songs context")
+        if self.e2e_deleted_id and (
+                self.e2e_deleted_id in data.get("context", [])
+                or data.get("track_id") == self.e2e_deleted_id):
+            raise SelfTestError("a deleted track leaked into the saved state")
 
 
 def _run_selftest(tracks, dump_dir: str | None = None) -> int:
+    import queue
+    import shutil
+    import tempfile
+
+    from shared.hardware import Track
+    from mac.store_mac import MacLibraryStore
+    from shared.webapp.server import start_webapp
+
     config.STARTUP_DURATION_S = 0.2   # keep the run inside the time budget
     config.ENCODER_ACCEL = False      # scripted detents fire faster than 1 s
     config.PISUGAR_PORT = 1           # force the boot probe to fail: offline mode
@@ -322,20 +412,42 @@ def _run_selftest(tracks, dump_dir: str | None = None) -> int:
             os.remove(stray)
     if dump_dir:
         os.makedirs(dump_dir, exist_ok=True)
+
+    # The web app manages a DISPOSABLE music root: a temp dir seeded with a
+    # slice of the synthetic catalog, so E2E uploads/deletes never touch
+    # mac/_audio. The whole selftest runs against this smaller library.
+    tmp_root = tempfile.mkdtemp(prefix="device_selftest_music_")
+    config.MUSIC_ROOT = tmp_root
+    seed = []
+    for t in tracks[:12]:
+        name = os.path.basename(t.file)
+        shutil.copy(t.file, os.path.join(tmp_root, name))
+        seed.append(Track(index=len(seed), title=t.title, artist=t.artist,
+                          album=t.album, track_no=t.track_no,
+                          duration=t.duration,
+                          file=os.path.join(tmp_root, name), id=t.id))
+    store = MacLibraryStore(root=tmp_root, seed=seed)
+    tracks = store.list_tracks()
+    web_events = queue.Queue()
+    port = start_webapp(store, web_events.put, port=0)  # ephemeral port
+
     inp = ScriptedInput()
     display = CaptureDisplay()
-    runner = SelfTestRunner(inp, tracks, dump_dir, display)
+    runner = SelfTestRunner(inp, tracks, dump_dir, display, port=port)
     # NullHaptic = the failed-haptics-probe result; the whole run must work
     # with it installed, proving no code path needs a real motor
     hw = HardwareBundle(display, inp, NullHaptic(), PlayerMac(tracks),
                         power=MockPowerSwitch())
     t0 = time.monotonic()
     try:
-        app.run(hw, tracks, bluetooth_mac, selftest_script=runner)
+        app.run(hw, tracks, bluetooth_mac, selftest_script=runner,
+                web_events=web_events, webapp_port=port)
         runner.verify_state_file()
     except SelfTestError as e:
         print(f"SELFTEST FAIL: {e}")
         return 1
+    finally:
+        shutil.rmtree(tmp_root, ignore_errors=True)
     print(f"SELFTEST PASS ({time.monotonic() - t0:.1f}s)")
     return 0
 

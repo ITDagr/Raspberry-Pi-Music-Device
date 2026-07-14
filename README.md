@@ -208,6 +208,17 @@ fine on a home network. On a shared network, set `WEBAPP_PIN` in
 `shared/config.py` (e.g. `"1234"`): every browser session then asks for
 the PIN once.
 
+**Manual browser checklist** (the API is fully covered by pytest and the
+selftest drives it over real HTTP; these need eyes once per change):
+
+- [ ] Drag a song onto the Upload tab — per-file progress bar fills, then
+  "done"; uploading the same file again offers Replace.
+- [ ] Library search filters as you type; ✎ opens the tag editor; saving
+  an artist change regroups the track.
+- [ ] Playlists: create, drag rows to reorder (the device's Music →
+  Playlists order follows), ✕ removes, Delete asks first.
+- [ ] Deleting a track shows the confirm dialog mentioning the trash.
+
 **Manual fallbacks** (no browser involved, same as v1):
 
 - `scp your-music/*.mp3 pi@device.local:Music/` (or rsync), then
