@@ -344,6 +344,18 @@ def main() -> int:
         # port first, then app.run() starts the (probing) poll thread
         return _run_selftest(tracks, DUMP_DIR)
     pisugar.start_polling()
+    web_events = None
+    if config.WEBAPP_ENABLED:
+        import queue
+
+        from mac.store_mac import MacLibraryStore
+        from shared.webapp.server import start_webapp
+
+        store = MacLibraryStore(seed=tracks)  # registry seeded from the catalog
+        tracks = store.list_tracks()          # includes earlier uploads/edits
+        web_events = queue.Queue()
+        port = start_webapp(store, web_events.put)
+        print(f"web app:  http://localhost:{port}")
     print("controls: ↑/↓ wheel · Enter/Space select · → right · ← left · "
           "Backspace back · P power switch · Esc quit")
     print("Haptic events print here:")
@@ -351,7 +363,7 @@ def main() -> int:
     hw = HardwareBundle(MockDisplay(), MockANOInput(power), MockHaptic(),
                         PlayerMac(tracks), power=power)
     try:
-        app.run(hw, tracks, bluetooth_mac)
+        app.run(hw, tracks, bluetooth_mac, web_events=web_events)
     except KeyboardInterrupt:
         pass
     return 0

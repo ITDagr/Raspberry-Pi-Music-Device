@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>device — library</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+<header>
+  <div class="brand">
+    <span class="brand-mark"></span>
+    <h1 id="device-name">device</h1>
+  </div>
+  <div class="stats">
+    <span id="stat-tracks">– tracks</span>
+    <span class="sep">·</span>
+    <span id="stat-disk">– free</span>
+    <span class="sep">·</span>
+    <span id="stat-battery">battery --</span>
+  </div>
+</header>
+
+<nav>
+  <button class="tab active" data-view="library">Library</button>
+  <button class="tab" data-view="upload">Upload</button>
+  <button class="tab" data-view="playlists">Playlists</button>
+</nav>
+
+<main>
+  <!-- ————— Library ————— -->
+  <section id="view-library" class="view active">
+    <div class="toolbar">
+      <input id="search" type="search" placeholder="Search title, artist, album…"
+             autocomplete="off">
+      <span id="library-count" class="muted"></span>
+    </div>
+    <div id="library"></div>
+  </section>
+
+  <!-- ————— Upload ————— -->
+  <section id="view-upload" class="view">
+    <div id="dropzone">
+      <div class="dz-inner">
+        <div class="dz-icon">⇪</div>
+        <p><strong>Drag songs here</strong> or</p>
+        <label class="btn accent">
+          Choose files<input id="file-input" type="file" multiple
+                 accept=".mp3,.m4a,.flac,.ogg,.wav" hidden>
+        </label>
+        <p class="muted">.mp3 · .m4a · .flac · .ogg · .wav</p>
+      </div>
+    </div>
+    <ul id="upload-queue"></ul>
+  </section>
+
+  <!-- ————— Playlists ————— -->
+  <section id="view-playlists" class="view">
+    <div class="toolbar">
+      <input id="new-playlist" type="text" placeholder="New playlist name…"
+             autocomplete="off">
+      <button id="create-playlist" class="btn accent">Create</button>
+    </div>
+    <div class="playlists-layout">
+      <ul id="playlist-list"></ul>
+      <div id="playlist-detail">
+        <p class="muted empty-hint">Select a playlist — drag rows to set the
+        play order on the device.</p>
+      </div>
+    </div>
+  </section>
+</main>
+
+<!-- ————— Edit-track modal ————— -->
+<dialog id="edit-modal">
+  <form id="edit-form" method="dialog">
+    <h2>Edit track</h2>
+    <p class="muted" id="edit-file"></p>
+    <label>Title <input name="title" required></label>
+    <label>Artist <input name="artist" required></label>
+    <label>Album <input name="album" required></label>
+    <label>Track # <input name="track_no" type="number" min="0" max="999"></label>
+    <p class="muted small">Changing artist or album moves the file — the
+    device's menus follow.</p>
+    <div class="modal-actions">
+      <button type="button" class="btn" id="edit-cancel">Cancel</button>
+      <button type="submit" class="btn accent">Save</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- ————— Add-to-playlist modal ————— -->
+<dialog id="pick-modal">
+  <h2>Add to playlist</h2>
+  <p class="muted" id="pick-track"></p>
+  <ul id="pick-list"></ul>
+  <div class="modal-actions">
+    <button type="button" class="btn" id="pick-cancel">Cancel</button>
+  </div>
+</dialog>
+
+<div id="toasts"></div>
+
+<script src="/static/app.js"></script>
+</body>
+</html>

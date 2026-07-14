@@ -115,6 +115,17 @@ VOLUME_STEP = 5
 VOLUME_FLASH_S = 1.5            # volume overlay lifetime
 PREV_RESTART_AFTER_S = 3.0      # iPod-style previous: restart if elapsed > this
 
+# --- web app: the library manager the device serves itself -------------------
+WEBAPP_ENABLED = True
+WEBAPP_HOST = "0.0.0.0"         # reachable from the LAN (it's the whole point)
+WEBAPP_PORT = 8080
+WEBAPP_MAX_UPLOAD_MB = 200      # per-file cap; oversize returns 413
+TRASH_KEEP_DAYS = 7             # deleted tracks sit in <music>/.trash this long
+PLAYLISTS_PATH = (
+    str(_REPO_ROOT / ".device_playlists.json") if IS_MAC
+    else "/home/pi/.device_playlists.json"
+)
+
 # --- PiSugar (optional — one boot probe decides online/offline mode) ---------
 PISUGAR_HOST = "127.0.0.1"
 PISUGAR_PORT = 8423

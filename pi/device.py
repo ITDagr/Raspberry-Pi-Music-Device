@@ -81,7 +81,7 @@ def main() -> int:
 
     pygame.init()
 
-    from shared import app, pisugar
+    from shared import app, config, pisugar
     from shared.hardware import HardwareBundle
     from pi import bluetooth_pi, library_mpd
     from pi.display_pi import DisplayPi
@@ -95,10 +95,24 @@ def main() -> int:
     pisugar.start_polling()
     tracks = library_mpd.load_tracks()
     print(f"device v2 — Pi, {len(tracks)} tracks from MPD")
+    web_events = None
+    if config.WEBAPP_ENABLED:
+        try:  # the web app is a convenience: never block booting on it
+            import queue
+
+            from pi.store_pi import PiLibraryStore
+            from shared.webapp.server import start_webapp
+
+            web_events = queue.Queue()
+            port = start_webapp(PiLibraryStore(), web_events.put)
+            print(f"web app: http://device.local:{port}")
+        except Exception as e:
+            print(f"webapp: disabled ({e})")
+            web_events = None
     hw = HardwareBundle(DisplayPi(), ANOInput(), make_haptic(), PlayerMPD(tracks),
                         power=PowerSwitchPi())
     try:
-        app.run(hw, tracks, bluetooth_pi)
+        app.run(hw, tracks, bluetooth_pi, web_events=web_events)
     except KeyboardInterrupt:
         pass
     return 0

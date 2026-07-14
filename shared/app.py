@@ -47,7 +47,9 @@ class Mode(Enum):
 
 class App:
     def __init__(self, hw: HardwareBundle, tracks: list[Track], bluetooth_module,
-                 selftest_script: Optional[Callable] = None):
+                 selftest_script: Optional[Callable] = None,
+                 web_events=None):
+        self.web_events = web_events  # queue.Queue fed by the web app thread
         self.display = hw.display
         self.input = hw.input
         self.haptic = hw.haptic
@@ -129,6 +131,12 @@ class App:
     def _toast(self, message: str) -> None:
         self.toast_msg = message
         self.toast_until = time.monotonic() + config.TOAST_S
+        self._mark_full()
+
+    def _playlists_changed(self) -> None:
+        """The playlist manifest changed (web app): rebuild the menus so
+        Music -> Playlists reflects it, keeping the navigation path."""
+        self.ctrl.rebuild(build_default_menus(self.tracks))
         self._mark_full()
 
     def apply_library(self, new_tracks: list) -> None:
@@ -574,6 +582,20 @@ class App:
                 self._mark_full()
                 self._handle_event(ev)
 
+            # library changes arriving from the web app thread
+            if self.web_events is not None:
+                while True:
+                    try:
+                        ev = self.web_events.get_nowait()
+                    except Exception:
+                        break
+                    if ev.get("tracks") is not None:
+                        self.apply_library(ev["tracks"])
+                    if ev.get("playlists"):
+                        self._playlists_changed()
+                    if ev.get("msg"):
+                        self._toast(ev["msg"])
+
             # auto-advance, then the player's own bookkeeping
             if self.player.track_finished:
                 self._next_track()
@@ -651,5 +673,5 @@ class App:
 
 
 def run(hw: HardwareBundle, tracks: list[Track], bluetooth_module, *,
-        selftest_script: Optional[Callable] = None) -> None:
-    App(hw, tracks, bluetooth_module, selftest_script).run()
+        selftest_script: Optional[Callable] = None, web_events=None) -> None:
+    App(hw, tracks, bluetooth_module, selftest_script, web_events).run()
