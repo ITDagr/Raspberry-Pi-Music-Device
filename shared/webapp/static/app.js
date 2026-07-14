@@ -26,10 +26,25 @@ function toast(msg, ok = false) {
   setTimeout(() => el.remove(), 3200);
 }
 
-async function api(path, options = {}) {
+/* Optional shared PIN (config.WEBAPP_PIN on the device): remembered for
+   the browser session, prompted for on the first 401. */
+function pinHeaders() {
+  const pin = sessionStorage.getItem("devicePin");
+  return pin ? { "X-Device-Pin": pin } : {};
+}
+
+async function api(path, options = {}, retried = false) {
+  options.headers = { ...(options.headers || {}), ...pinHeaders() };
   const res = await fetch(path, options);
   let body = {};
   try { body = await res.json(); } catch { /* non-JSON error page */ }
+  if (res.status === 401 && !retried) {
+    const pin = prompt("This device asks for its PIN:");
+    if (pin) {
+      sessionStorage.setItem("devicePin", pin);
+      return api(path, options, true);
+    }
+  }
   if (!res.ok) throw new Error(body.error || `${res.status} ${res.statusText}`);
   return body;
 }
@@ -224,6 +239,8 @@ function uploadOne(file, replace = false) {
 
   const xhr = new XMLHttpRequest();
   xhr.open("POST", "/api/upload" + (replace ? "?replace=1" : ""));
+  const pin = sessionStorage.getItem("devicePin");
+  if (pin) xhr.setRequestHeader("X-Device-Pin", pin);
   xhr.upload.addEventListener("progress", (e) => {
     if (e.lengthComputable) {
       const pct = Math.round((e.loaded / e.total) * 100);

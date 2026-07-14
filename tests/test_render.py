@@ -186,6 +186,31 @@ def test_status_bar_offline_battery(renderer):
     assert _rect_has_color(s, top_right, scr.MUTED), "header shows no '--' marker"
 
 
+def test_webapp_screen_renders_scannable_qr(renderer):
+    info = {"url": "http://device.local:8080", "ip": "192.168.1.23",
+            "port": 8080, "ssid": "HomeNet", "wifi_state": "on"}
+    s = _surface()
+    renderer.draw_webapp_screen(s, info, STATUS)
+    # the QR sits on a white backing with black modules — both must exist,
+    # including the white quiet zone (cameras need it)
+    lower = pygame.Rect(20, 100, scr.SIZE - 40, scr.SIZE - 112)
+    assert _rect_has_color(s, lower, (255, 255, 255), 10), "no white QR backing"
+    assert _rect_has_color(s, lower, (0, 0, 0), 10), "no black QR modules"
+    # the finder pattern corner: a solid black run at the QR's top-left
+    assert _rect_has_color(s, pygame.Rect(0, 24, scr.SIZE, 40), scr.ACCENT), \
+        "URL line missing"
+
+
+def test_webapp_screen_wifi_pending_state(renderer):
+    s = _surface()
+    renderer.draw_webapp_screen(
+        s, {"wifi_state": "connecting", "wifi_message": "Connecting to HomeNet…"},
+        STATUS)
+    assert _frac_non_bg(s) >= 0.01
+    assert not _rect_has_color(s, pygame.Rect(60, 120, 120, 100),
+                               (255, 255, 255), 5), "QR must not render yet"
+
+
 def test_display_test_pattern(renderer):
     """The --display-test pattern: border on every edge, exact R/G/B bars."""
     s = _surface()

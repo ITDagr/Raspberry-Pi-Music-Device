@@ -234,6 +234,13 @@ class SelfTestRunner:
         press("back"); yield 0
         expect(a.mode is Mode.MENU, "back should leave bluetooth")
 
+        # --- Web App screen: URL + IP + QR --------------------------------------
+        press("scroll_up", "select"); yield 0.2  # wrap to Web App (last row)
+        expect(a.mode is Mode.WEBAPP, f"expected WEBAPP, got {a.mode}")
+        self._snap("webapp")
+        press("back"); yield 0
+        expect(a.mode is Mode.MENU, "back should leave the web app screen")
+
         # --- Phase 3a: wake only by center press -------------------------------
         old_dim, old_sleep = config.DIM_AFTER_S, config.SLEEP_AFTER_S
         config.DIM_AFTER_S, config.SLEEP_AFTER_S = 0.3, 0.6
@@ -347,6 +354,7 @@ def main() -> int:
         return _run_selftest(tracks, DUMP_DIR)
     pisugar.start_polling()
     web_events = None
+    webapp_port = None
     if config.WEBAPP_ENABLED:
         import queue
 
@@ -356,8 +364,8 @@ def main() -> int:
         store = MacLibraryStore(seed=tracks)  # registry seeded from the catalog
         tracks = store.list_tracks()          # includes earlier uploads/edits
         web_events = queue.Queue()
-        port = start_webapp(store, web_events.put)
-        print(f"web app:  http://localhost:{port}")
+        webapp_port = start_webapp(store, web_events.put)
+        print(f"web app:  http://localhost:{webapp_port}")
     print("controls: ↑/↓ wheel · Enter/Space select · → right · ← left · "
           "Backspace back · P power switch · Esc quit")
     print("Haptic events print here:")
@@ -365,7 +373,8 @@ def main() -> int:
     hw = HardwareBundle(MockDisplay(), MockANOInput(power), MockHaptic(),
                         PlayerMac(tracks), power=power)
     try:
-        app.run(hw, tracks, bluetooth_mac, web_events=web_events)
+        app.run(hw, tracks, bluetooth_mac, web_events=web_events,
+                webapp_port=webapp_port)
     except KeyboardInterrupt:
         pass
     return 0

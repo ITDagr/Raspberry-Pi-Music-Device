@@ -37,6 +37,11 @@ sudo pip3 install --quiet --break-system-packages -r "$REPO_DIR/requirements-pi.
 say "3/7  Enabling the SPI (display) and I2C (encoder) interfaces"
 sudo raspi-config nonint do_spi 0
 sudo raspi-config nonint do_i2c 0
+# the web app's address is http://device.local:8080 — that name IS the hostname
+if [ "$(hostname)" != "device" ]; then
+    echo "    setting hostname to 'device' (was '$(hostname)') so device.local works"
+    sudo raspi-config nonint do_hostname device
+fi
 
 say "4/7  Configuring MPD — your music lives in $MUSIC_DIR"
 mkdir -p "$MUSIC_DIR"

@@ -120,6 +120,7 @@ WEBAPP_ENABLED = True
 WEBAPP_HOST = "0.0.0.0"         # reachable from the LAN (it's the whole point)
 WEBAPP_PORT = 8080
 WEBAPP_MAX_UPLOAD_MB = 200      # per-file cap; oversize returns 413
+WEBAPP_PIN = None               # e.g. "1234": require a PIN on shared networks
 TRASH_KEEP_DAYS = 7             # deleted tracks sit in <music>/.trash this long
 PLAYLISTS_PATH = (
     str(_REPO_ROOT / ".device_playlists.json") if IS_MAC

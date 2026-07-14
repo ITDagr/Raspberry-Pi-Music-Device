@@ -10,3 +10,5 @@ python-mpd2
 smbus2          # boot-time encoder probe + tools/i2c_scan.py
 flask           # the library web app the device serves
 mutagen         # tag read/write for uploads and retagging
+segno           # QR code on the Web App screen (pure Python)
+zeroconf        # best-effort service advertisement next to avahi's mDNS

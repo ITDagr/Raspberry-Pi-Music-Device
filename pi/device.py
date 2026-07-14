@@ -96,6 +96,7 @@ def main() -> int:
     tracks = library_mpd.load_tracks()
     print(f"device v2 — Pi, {len(tracks)} tracks from MPD")
     web_events = None
+    webapp_port = None
     if config.WEBAPP_ENABLED:
         try:  # the web app is a convenience: never block booting on it
             import queue
@@ -104,15 +105,16 @@ def main() -> int:
             from shared.webapp.server import start_webapp
 
             web_events = queue.Queue()
-            port = start_webapp(PiLibraryStore(), web_events.put)
-            print(f"web app: http://device.local:{port}")
+            webapp_port = start_webapp(PiLibraryStore(), web_events.put)
+            print(f"web app: http://device.local:{webapp_port}")
         except Exception as e:
             print(f"webapp: disabled ({e})")
             web_events = None
     hw = HardwareBundle(DisplayPi(), ANOInput(), make_haptic(), PlayerMPD(tracks),
                         power=PowerSwitchPi())
     try:
-        app.run(hw, tracks, bluetooth_pi, web_events=web_events)
+        app.run(hw, tracks, bluetooth_pi, web_events=web_events,
+                webapp_port=webapp_port)
     except KeyboardInterrupt:
         pass
     return 0

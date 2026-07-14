@@ -186,6 +186,8 @@ def build_default_menus(tracks: list[Track],
         MenuItem("Battery", "do:battery"),
         MenuItem("Brightness", "do:brightness"),
         MenuItem("About", "do:about"),
+        # appended last so existing row positions (and muscle memory) hold
+        MenuItem("Web App", "do:webapp"),
     ])
 
     # Artists -> artist_<slug> menus (tracks in album/track order)

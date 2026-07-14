@@ -2,4 +2,5 @@
 pygame>=2.1
 flask>=3         # the library web app the device serves
 mutagen>=1.47    # tag reading for uploads
+segno>=1.6       # QR code on the Web App screen (pure Python)
 pytest>=7        # tests only

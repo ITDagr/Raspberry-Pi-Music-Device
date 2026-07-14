@@ -447,6 +447,80 @@ class ScreenRenderer:
         self._render(surface, "Rotate wheel to adjust", self._font(11), C_DIM,
                      SIZE // 2, cy + 60, "midtop")
 
+    def draw_webapp_screen(self, surface, info: dict, status: dict) -> None:
+        """Settings -> Web App: the URL, the numeric-IP fallback, WiFi
+        facts, and a camera-scannable QR of the URL (segno, pure Python).
+        info: {url, ip, port, ssid, wifi_state}."""
+        surface.fill(C_BASE)
+        self._status_bar(surface, status)
+        self._render(surface, "WEB APP", self._font(10, bold=True), C_DIM,
+                     MARGIN, STATUSH + 6, "topleft")
+        y = STATUSH + 22
+        wifi_state = info.get("wifi_state", "on")
+        if wifi_state != "on":
+            # Phase F states: "Turning WiFi on…" / "Connecting to <ssid>…"
+            self._render(surface, info.get("wifi_message", wifi_state),
+                         self._font(14, bold=True), C_TEXT,
+                         SIZE // 2, SIZE // 2 - 10, "midtop")
+            self._render(surface, "the web app opens when connected",
+                         self._font(11), C_DIM, SIZE // 2, SIZE // 2 + 16,
+                         "midtop")
+            return
+        self._render(surface, self._fit(info.get("url", ""),
+                                        self._font(14, bold=True),
+                                        SIZE - MARGIN * 2),
+                     self._font(14, bold=True), C_ACCENT, MARGIN, y, "topleft")
+        y += 20
+        ip = info.get("ip")
+        port = info.get("port")
+        fallback = f"or  http://{ip}:{port}" if ip else "no network address yet"
+        self._render(surface, fallback, self._font(11), C_DIM, MARGIN, y,
+                     "topleft")
+        y += 16
+        ssid = info.get("ssid")
+        self._render(surface, f"WiFi: {ssid or '--'}", self._font(11), C_DIM,
+                     MARGIN, y, "topleft")
+        self._draw_qr(surface, info.get("url", ""),
+                      center=(SIZE // 2, y + 14 + (SIZE - y - 14 - MARGIN) // 2),
+                      max_side=SIZE - y - 30 - MARGIN)
+
+    _qr_cache: dict = {}
+
+    def _draw_qr(self, surface, url: str, center: tuple, max_side: int) -> None:
+        if not url:
+            return
+        cached = self._qr_cache.get(url)
+        if cached is None:
+            try:
+                import segno
+
+                qr = segno.make(url, error="m")
+                matrix = [bytearray(row) for row in qr.matrix]
+            except Exception as e:  # no segno: the URL text still works
+                print(f"webapp screen: no QR ({e})")
+                self._qr_cache[url] = False
+                return
+            self._qr_cache[url] = matrix
+            cached = matrix
+        if cached is False:
+            return
+        modules = len(cached)
+        quiet = 2                          # quiet-zone modules on each side
+        scale = max(2, max_side // (modules + quiet * 2))
+        side = (modules + quiet * 2) * scale
+        x0 = center[0] - side // 2
+        y0 = center[1] - side // 2
+        # white backing incl. quiet zone: cameras need the contrast
+        pygame.draw.rect(surface, (255, 255, 255), (x0, y0, side, side),
+                         border_radius=4)
+        off = quiet * scale
+        for ry, row in enumerate(cached):
+            for rx, bit in enumerate(row):
+                if bit:
+                    pygame.draw.rect(surface, (0, 0, 0),
+                                     (x0 + off + rx * scale,
+                                      y0 + off + ry * scale, scale, scale))
+
     def draw_toast(self, surface, message: str) -> None:
         """Transient notification card along the bottom edge (library
         changes arriving from the web app: added / removed / playlist)."""

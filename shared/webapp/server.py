@@ -34,6 +34,19 @@ def create_app(store: BaseLibraryStore, notify):
     app = Flask(__name__, static_folder=str(static_dir), static_url_path="/static")
     app.config["MAX_CONTENT_LENGTH"] = config.WEBAPP_MAX_UPLOAD_MB * 1024 * 1024
 
+    @app.before_request
+    def _pin_gate():
+        """Optional shared PIN for shared networks (config.WEBAPP_PIN).
+        The page itself loads; every API call must carry the header —
+        the frontend prompts once and remembers it for the session."""
+        if not config.WEBAPP_PIN:
+            return None
+        if not request.path.startswith("/api/"):
+            return None
+        if request.headers.get("X-Device-Pin") == str(config.WEBAPP_PIN):
+            return None
+        return jsonify(error="PIN required"), 401
+
     def push_library(msg: str) -> None:
         notify({"msg": msg, "tracks": store.list_tracks()})
 
@@ -139,6 +152,32 @@ def create_app(store: BaseLibraryStore, notify):
     return app
 
 
+def _advertise(port: int) -> None:
+    """Best-effort zeroconf HTTP service record so the device shows up in
+    network browsers. avahi already serves device.local; this is gravy —
+    any failure (module missing on the Mac, no network) is non-fatal."""
+    try:
+        import socket
+
+        from zeroconf import ServiceInfo, Zeroconf
+
+        from shared import netinfo
+
+        ip = netinfo.get_ip()
+        if not ip:
+            return
+        name = socket.gethostname().split(".")[0] or "device"
+        info = ServiceInfo(
+            "_http._tcp.local.",
+            f"{name} music library._http._tcp.local.",
+            addresses=[socket.inet_aton(ip)], port=port,
+            properties={"path": "/"}, server=f"{name}.local.",
+        )
+        Zeroconf().register_service(info)
+    except Exception as e:
+        print(f"webapp: zeroconf advertise skipped ({e})")
+
+
 def start_webapp(store: BaseLibraryStore, notify, port: int = None) -> int:
     """Serve on a daemon thread; returns the actual bound port."""
     from werkzeug.serving import make_server
@@ -149,4 +188,5 @@ def start_webapp(store: BaseLibraryStore, notify, port: int = None) -> int:
                          app, threaded=True)
     threading.Thread(target=server.serve_forever, daemon=True,
                      name="webapp").start()
+    _advertise(server.server_port)
     return server.server_port

@@ -43,13 +43,15 @@ class Mode(Enum):
     BATTERY = auto()
     BRIGHTNESS = auto()
     ABOUT = auto()
+    WEBAPP = auto()
 
 
 class App:
     def __init__(self, hw: HardwareBundle, tracks: list[Track], bluetooth_module,
                  selftest_script: Optional[Callable] = None,
-                 web_events=None):
+                 web_events=None, webapp_port: Optional[int] = None):
         self.web_events = web_events  # queue.Queue fed by the web app thread
+        self.webapp_port = webapp_port or config.WEBAPP_PORT
         self.display = hw.display
         self.input = hw.input
         self.haptic = hw.haptic
@@ -255,6 +257,7 @@ class App:
             Mode.BATTERY: self._battery_event,
             Mode.BRIGHTNESS: self._brightness_event,
             Mode.ABOUT: self._about_event,
+            Mode.WEBAPP: self._webapp_event,
         }[self.mode]
         handler(ev)
 
@@ -335,6 +338,11 @@ class App:
             self.haptic.click()
             self.about_scroll = 0
             self.mode = Mode.ABOUT
+        elif act == "webapp":
+            self.haptic.click()
+            self.mode = Mode.WEBAPP
+        elif act == "noop":
+            self.haptic.click()  # hint rows: acknowledge, do nothing
         else:
             print("ACTION:", act)
 
@@ -419,6 +427,23 @@ class App:
             self.haptic.back()
             self.mode = Mode.MENU
 
+    def _webapp_event(self, ev: str) -> None:
+        if ev in ("left", "back", "select"):
+            self.haptic.back()
+            self.mode = Mode.MENU
+
+    def _webapp_info(self) -> dict:
+        from shared import netinfo
+
+        host = "localhost" if config.IS_MAC else "device.local"
+        return {
+            "url": f"http://{host}:{self.webapp_port}",
+            "ip": netinfo.get_ip(),
+            "port": self.webapp_port,
+            "ssid": netinfo.get_ssid(),
+            "wifi_state": "on",
+        }
+
     def _brightness_event(self, ev: str) -> None:
         if ev in ("scroll_up", "scroll_down"):
             delta = config.BRIGHTNESS_STEP if ev == "scroll_up" else -config.BRIGHTNESS_STEP
@@ -490,6 +515,8 @@ class App:
             self.renderer.draw_brightness_screen(surface, self.brightness, st)
         elif self.mode is Mode.ABOUT:
             self.renderer.draw_about_screen(surface, self.about_scroll, st)
+        elif self.mode is Mode.WEBAPP:
+            self.renderer.draw_webapp_screen(surface, self._webapp_info(), st)
         if time.monotonic() < self.vol_flash_until:
             self.renderer.draw_volume_overlay(surface, self.player.volume)
         if time.monotonic() < self.toast_until:
@@ -689,5 +716,7 @@ class App:
 
 
 def run(hw: HardwareBundle, tracks: list[Track], bluetooth_module, *,
-        selftest_script: Optional[Callable] = None, web_events=None) -> None:
-    App(hw, tracks, bluetooth_module, selftest_script, web_events).run()
+        selftest_script: Optional[Callable] = None, web_events=None,
+        webapp_port: Optional[int] = None) -> None:
+    App(hw, tracks, bluetooth_module, selftest_script, web_events,
+        webapp_port).run()
