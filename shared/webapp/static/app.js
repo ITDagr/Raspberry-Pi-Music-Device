@@ -58,14 +58,20 @@ async function api(path, options = {}, retried = false) {
 
 /* ————— tabs ————— */
 
+function showView(name) {
+  const tab = document.querySelector(`.tab[data-view="${name}"]`);
+  if (!tab) return;
+  document.querySelectorAll(".tab").forEach((t) => t.classList.remove("active"));
+  document.querySelectorAll(".view").forEach((v) => v.classList.remove("active"));
+  tab.classList.add("active");
+  $(`#view-${name}`).classList.add("active");
+  history.replaceState(null, "", `#${name}`);  // tabs are bookmarkable
+}
+
 document.querySelectorAll(".tab").forEach((tab) => {
-  tab.addEventListener("click", () => {
-    document.querySelectorAll(".tab").forEach((t) => t.classList.remove("active"));
-    document.querySelectorAll(".view").forEach((v) => v.classList.remove("active"));
-    tab.classList.add("active");
-    $(`#view-${tab.dataset.view}`).classList.add("active");
-  });
+  tab.addEventListener("click", () => showView(tab.dataset.view));
 });
+if (location.hash) showView(location.hash.slice(1));
 
 /* ————— header status ————— */
 
