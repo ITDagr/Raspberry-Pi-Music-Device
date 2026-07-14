@@ -12,18 +12,20 @@ without hardware.
   `curl -LsSf https://astral.sh/uv/install.sh | sh`, then
   `uv venv --python 3.12 .venv`
 
-## Install
+## Install + run (one command)
 
 ```sh
 cd pimusicdevice
+bash mac/run.sh
+```
+
+That creates `.venv/`, installs `requirements-mac.txt`, and launches —
+and is safe to re-run. The manual equivalent:
+
+```sh
 python3 -m venv .venv                 # or: uv venv --python 3.12 .venv
 source .venv/bin/activate
 pip install -r requirements-mac.txt   # pygame (+ pytest for the test suite)
-```
-
-## Run
-
-```sh
 python3 mac/prototype.py
 ```
 

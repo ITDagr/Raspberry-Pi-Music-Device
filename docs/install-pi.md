@@ -1,7 +1,20 @@
 # Installing on the Raspberry Pi
 
+**The short way:** assemble the hardware ([hardware.md](hardware.md)),
+flash Pi OS Bookworm Lite, then on the Pi:
+
+```sh
+git clone <this-repo> pimusicdevice && cd pimusicdevice
+bash install.sh && sudo reboot
+```
+
+`install.sh` performs every step on this page (idempotently) and also
+applies the power tweaks from the README's Power & Performance section.
+The rest of this page is the manual equivalent, useful for understanding
+or debugging the setup.
+
 Target: Raspberry Pi Zero 2 W, Raspberry Pi OS **Bookworm Lite** (64-bit),
-Python 3.11. Wire the hardware first — see [hardware.md](hardware.md).
+Python 3.11. Assemble the hardware first — see [hardware.md](hardware.md).
 
 ## 1. OS + interfaces
 

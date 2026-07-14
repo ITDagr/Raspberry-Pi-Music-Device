@@ -23,23 +23,39 @@ consistently, `--dump-frames /tmp/frames` usually shows what went wrong.
 
 ## Pi display
 
-**Blank/white screen** — check DC/RST/BL pins vs `shared/config.py`, SPI
-enabled (`ls /dev/spidev0.0`), and the backlight pin actually PWM-ing
-(`PIN_BL` default GPIO 18).
+First move for any display symptom: `sudo systemctl stop pimusicdevice`,
+then `python3 pi/device.py --display-test` — the border / corner-labels /
+UP-arrow / R-G-B pattern makes the failure class obvious in one look.
 
-**Image shifted or has garbage edges** — set `DISPLAY_X_OFFSET` /
-`DISPLAY_Y_OFFSET` (some 240×240 panels start at row 80 in one rotation).
+**Blank/white screen** — reseat the EYESPI cable at both ends (latch open,
+cable contacts-down, latch closed), confirm SPI is enabled
+(`ls /dev/spidev0.0`). The pins themselves are fixed by the Beret, so
+wiring mistakes are limited to the two cables.
 
-**Colors inverted** — your panel doesn't want `INVON`; remove the `0x21`
-command in `pi/display_pi.py`.
+**Image shifted / garbage band / wrapped** — the active profile's
+offsets don't match the panel. Check `DISPLAY_PROFILE` in
+`shared/config.py` points at your panel (`adafruit_154_240x240` for the
+1.54", `adafruit_13_240x240` for the 1.3").
 
-**Low FPS** — confirm `SPI_SPEED_HZ = 62_500_000` took (some ribbons cap
-lower); a full frame is ~115 KB ≈ 7.4 ms on the wire at 62.5 MHz.
+**Colors inverted** — your panel doesn't want inversion; set
+`"invert": False` in its `DISPLAY_PROFILES` entry.
+
+**Wrong color order (R and B bars swapped in `--display-test`)** — panel
+variant with BGR order; note it and adjust the MADCTL value in
+`pi/display_pi.py` (bit 0x08).
+
+**Artifacts / speckles at full speed** — drop the profile's `baudrate` to
+`SPI_SPEED_FALLBACK_HZ` (24 MHz); some ribbons cap below 62.5 MHz.
 
 ## Pi input / haptics
 
-**Nothing at `0x49` / `0x5a` in `i2cdetect -y 1`** — wiring/power; the UI
-runs anyway (input dead ⇒ log line, haptics dead ⇒ log line + silent).
+**Nothing at `0x49` in `i2cdetect -y 1`** — reseat the encoder's STEMMA QT
+cable (Beret port or hub, electrically identical). The encoder is
+mandatory: boot exits with a bus listing when it's missing. Also:
+`python3 tools/i2c_scan.py`.
+
+**Nothing at `0x5a`** — haptics are optional; boot logs one line
+("haptics: not detected — continuing without") and runs silently.
 
 **Wheel scrolls backwards** — flip `ENCODER_REVERSED`.
 
@@ -56,8 +72,9 @@ runs anyway (input dead ⇒ log line, haptics dead ⇒ log line + silent).
 
 ## Battery / clock
 
-**Battery shows nothing** — no PiSugar daemon on `127.0.0.1:8423`; that's
-the designed silent fallback. The clock falls back to system time.
+**Battery shows "--"** — no PiSugar daemon on `127.0.0.1:8423`; that's
+the designed offline mode (one log line at boot, silent 5-minute
+re-probes). The clock falls back to system time.
 
 ## Where state lives
 

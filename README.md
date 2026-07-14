@@ -1,50 +1,142 @@
 # pimusicdevice
 
-A pocket music player: Raspberry Pi Zero 2 W, a 240×240 TFT, a click-wheel
-(ANO rotary encoder), real haptics, a PiSugar battery, and MPD audio — with
-a **pixel-identical Mac simulator** for development. One shared main loop
-runs on both targets; `mac/` and `pi/` provide only hardware drivers and
-~30-line launchers.
+A pocket music player you can build without soldering: a Raspberry Pi
+Zero 2 W wearing an EYESPI Pi Beret, a 1.54" color screen, and a
+click-wheel — plus a **pixel-identical Mac simulator** so you can try it
+right now with no hardware at all.
 
+## Getting Started
+
+### Track A — Try it on your Mac (2 minutes)
+
+1. Clone and enter the repo:
+
+   ```sh
+   git clone <this-repo> pimusicdevice && cd pimusicdevice
+   ```
+
+2. Run it (creates a virtualenv and installs dependencies on first run;
+   needs Python 3.10+):
+
+   ```sh
+   bash mac/run.sh
+   ```
+
+3. A window opens: you should see a short boot animation (accent line →
+   waveform → "device" wordmark) and land in a menu with a small synthetic
+   music library. Controls:
+
+   | Key | Does |
+   |---|---|
+   | ↑ / ↓ | wheel detents — scroll menus, volume in Now Playing |
+   | Enter / Space | select · play/pause |
+   | → / ← | next/previous track · select/back in menus |
+   | Backspace | back |
+   | P | toggle the (soft) power switch |
+   | Esc / close window | quit |
+
+### Track B — Build the real device
+
+**Parts** (Adafruit product names; no soldering anywhere):
+
+- Raspberry Pi Zero 2 W (with a 40-pin header)
+- Adafruit **EYESPI Pi Beret** (#5783)
+- Adafruit **1.54" 240×240 Wide Angle IPS TFT with EYESPI connector**,
+  plus an **18-pin EYESPI FPC cable**
+- Adafruit **ANO Rotary Navigation Encoder** breakout, plus a
+  **STEMMA QT cable**
+- *Optional:* DRV2605L haptic driver + LRA motor (click feedback)
+- *Optional:* PiSugar battery board (battery % + real-time clock)
+- A battery: a **5,000 mAh-class USB pack is recommended** (see
+  "Power & Performance" below for real battery-life numbers)
+- A microSD card (8 GB+)
+
+**Assemble** (a couple of minutes): seat the Beret on the Pi's 40-pin
+header. Connect the display to the Beret with the EYESPI cable (lift the
+small black latch, slide the cable in contacts-down, close the latch).
+Plug the encoder's STEMMA QT cable into the Beret's STEMMA QT port. Done —
+every pin is fixed by the Beret, there is nothing to wire.
+
+**Flash the SD card** with [Raspberry Pi
+Imager](https://www.raspberrypi.com/software/):
+
+1. Choose OS → *Raspberry Pi OS (other)* → **Raspberry Pi OS Lite
+   (64-bit)**.
+2. Click the **gear / "Edit Settings"** button before writing:
+   - *General* tab: set hostname to **`device`**; set username **`pi`**
+     and a password; enter your **WiFi network name and password**.
+   - *Services* tab: **enable SSH** (password authentication).
+3. Write the card, put it in the Pi, power up, give it a minute.
+
+**Install** from your computer (same WiFi network):
+
+```sh
+ssh pi@device.local
+sudo apt install -y git        # Pi OS Lite doesn't ship git
+git clone <this-repo> pimusicdevice && cd pimusicdevice
+bash install.sh
+sudo reboot
 ```
-shared/    app loop, menus, renderer (v1 "DETENT" design), dimmer, state, pisugar
-mac/       pygame window, keyboard, terminal haptics, synth library, mixer player
-pi/        ST7789 SPI display, ANO/seesaw input, DRV2605L, MPD player, bluetoothctl
-tests/     pytest (logic + pixel render tests)
-tools/     dev utilities (v1 frame renders for design comparison)
-systemd/   pimusicdevice.service (start on boot)
-docs/      the guides ↓
+
+`install.sh` is one command and safe to re-run: it installs packages
+(mpd, mpc, python3-pip, i2c-tools, …), the Python libraries, enables SPI
+and I²C, writes a working MPD config pointing at `~/Music`, applies the
+power tweaks, and installs the boot service.
+
+**What success looks like:** after the reboot the screen plays the boot
+animation and lands in the menu. Then copy music over and index it:
+
+```sh
+scp -r ~/Music/* pi@device.local:Music/   # from your computer
+ssh pi@device.local mpc update            # tell MPD to rescan
 ```
+
+**The physical controls:**
+
+| Input | Does |
+|---|---|
+| wheel | scroll menus · volume in Now Playing |
+| center press | select · play/pause · wakes a dark screen |
+| center hold ≥ 600 ms | back |
+| ring left/right | back-previous / select-next |
+| slide switch (on the Beret) | soft power off / on |
+
+### If something doesn't work
+
+| Symptom | Fix |
+|---|---|
+| Blank screen | Reseat the EYESPI cable (latch open → cable fully in → latch closed). Then `sudo systemctl stop pimusicdevice` and run `python3 pi/device.py --display-test` — a border/arrow/RGB pattern should appear. Artifacts? Set the display profile's `baudrate` to 24 MHz in `shared/config.py`. |
+| Knob does nothing | `i2cdetect -y 1` must show `49`. If not, reseat the STEMMA QT cable at both ends. |
+| No sound | Audio goes over Bluetooth: pair your speaker in Settings → Bluetooth on the device, then route MPD per [docs/bluetooth-audio.md](docs/bluetooth-audio.md). |
+| Can't reach `device.local` | Hostname and WiFi are set at flash time — re-flash the card with Imager and re-check the settings dialog (step 2 above). |
 
 ## Guides
 
 | Guide | Covers |
 |---|---|
 | [docs/install-mac.md](docs/install-mac.md) | run the simulator on a Mac, verify the install |
-| [docs/install-pi.md](docs/install-pi.md) | full Pi setup: OS, interfaces, deps, MPD, systemd |
+| [docs/install-pi.md](docs/install-pi.md) | manual Pi setup (what `install.sh` automates) |
 | [docs/hardware.md](docs/hardware.md) | parts list, wiring tables, physical controls |
 | [docs/usage.md](docs/usage.md) | controls, every screen, dimming, saved state |
 | [docs/bluetooth-audio.md](docs/bluetooth-audio.md) | pairing + routing MPD to Bluetooth sinks |
 | [docs/development.md](docs/development.md) | architecture, gates, design system, adding screens |
 | [docs/troubleshooting.md](docs/troubleshooting.md) | symptoms → fixes, both targets |
 
-## Quickstart (Mac)
+## Repo layout
 
-```sh
-python3 -m venv .venv && source .venv/bin/activate   # Python >= 3.10
-pip install -r requirements-mac.txt
-python3 mac/prototype.py
+One shared main loop runs on both targets; `mac/` and `pi/` provide only
+hardware drivers and small launchers.
+
 ```
-
-↑/↓ wheel · Enter select · →/← next-prev/select-back · Backspace back ·
-Esc quit. Verify with `python3 mac/prototype.py --selftest` and `pytest -q`.
-
-## Quickstart (Pi)
-
-Wire per [docs/hardware.md](docs/hardware.md), then follow
-[docs/install-pi.md](docs/install-pi.md). Short version: enable SPI+I2C,
-install deps + MPD, clone to `/home/pi/pimusicdevice`,
-`python3 pi/device.py`, then install `systemd/pimusicdevice.service`.
+shared/    app loop, menus, renderer (v1 "DETENT" design), dimmer, state, pisugar
+mac/       pygame window, keyboard, terminal haptics, synth library, mixer player
+pi/        ST7789 SPI display, ANO/seesaw input, DRV2605L, MPD player, bluetoothctl
+tests/     pytest (logic + pixel render tests)
+tools/     dev utilities (i2c scan, v1 frame renders)
+systemd/   pimusicdevice.service + powersave unit (installed by install.sh)
+docs/      the guides ↑
+install.sh one-command Pi setup      mac/run.sh  one-command Mac simulator
+```
 
 ## Display: EYESPI Pi Beret + 1.54" TFT
 
@@ -282,7 +374,38 @@ Decisions made where the spec left room:
     `MockDisplay.push_frame` now pumps events on every flip, window-expose
     events force a redraw, and the app pushes a forced initial frame after
     boot. `tests/test_render.py` and `--dump-frames` guard the drawing path.
-18. **"Black boxes over text" root cause (fixed):** a second macOS-only bug.
+18. **v2.1 hardware-change decisions (Beret retarget):**
+    - *Waking presses:* only a **short** center press wakes a dark screen
+      ("select" fires on release). Holding the center button on a dark
+      screen fires its long-press "back" at 600 ms, which the dark-screen
+      gate discards — so a long hold neither wakes nor acts, and there is
+      no stale long-press state to reset after a wake.
+    - *Soft-off input:* the idle loop drains-and-discards input each poll
+      so the Mac's event queue stays alive (P and Esc must register); on
+      the Pi that adds one passive I²C read per 250 ms, functionally
+      identical to "ignoring" input. "quit" (Esc/window close) is honored
+      during soft-off on the Mac — a dev simulator that can't be closed
+      would be hostile; the Pi never emits "quit".
+    - *Soft-off resume* rebuilds the menu controller and boots into
+      MENU/home ("exactly like a normal boot"), rather than restoring the
+      pre-off screen.
+    - *Partial updates* are gated on the dimmer being AWAKE rather than
+      the literal "full backlight": Phase 6's own 70 % default wake
+      brightness would otherwise disable the feature permanently. The Mac
+      mock's `push_region` applies the same gamma-dim compositing as full
+      frames, so there is no dim-overlay interaction at any level.
+    - *Volume overlay* frames stay full-frame (its dim underlay spans the
+      whole screen); since it is static while visible, it stops pushing
+      frames entirely until it expires.
+    - *Selftest peripheral probes:* on the Mac the "failed haptics probe"
+      is represented by installing `NullHaptic` directly (the real probe
+      needs Pi I²C), and PiSugar is forced offline by pointing its port at
+      1 before the poll thread starts.
+    - *`macapp/` in the acceptance gate:* the repo has no `macapp/`
+      directory; `compileall` covers `shared mac pi tools`.
+    - *MPD_POLL_S* was removed with the polling it throttled; the idle
+      thread's reconnect backoff is `MPD_RETRY_S`.
+19. **"Black boxes over text" root cause (fixed):** a second macOS-only bug.
     Under the cocoa driver, plain `pygame.Surface()` inherits the display
     format, which carries an alpha mask — and SDL's blit of antialiased text
     (or any per-pixel-alpha source) onto such a surface renders solid
