@@ -1,10 +1,13 @@
 """device v2 — JSON persistence for playback/UI state.
 
-Schema: {context: [int], pos: int, shuffle: bool, track_index: int,
+Schema: {context: [track id], pos: int, shuffle: bool, track_id: str,
          elapsed: float, volume: int, brightness: int}
 
-Writes are atomic (tmp file + os.replace). load() tolerates missing or
-corrupt files by returning None.
+Track ids (music-root-relative paths) are the durable identity — the
+library changes at runtime, so indices would go stale. Pre-v2.2 state
+files stored indices; they restore as "no resume" and are overwritten on
+the next save. Writes are atomic (tmp file + os.replace). load()
+tolerates missing or corrupt files by returning None.
 """
 from __future__ import annotations
 

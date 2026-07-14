@@ -99,6 +99,7 @@ class SelfTestRunner:
                  display: CaptureDisplay | None = None) -> None:
         self.inp = inp
         self.songs_ctx = extract_play_context(build_default_menus(tracks)["songs"])
+        self.songs_ids = [tracks[i].id for i in self.songs_ctx]
         self.dump_dir = dump_dir
         self.display = display
         self._gen = None
@@ -257,6 +258,7 @@ class SelfTestRunner:
 
         # --- Phase 3b: soft power off -> on with state round-trip --------------
         track_before = a.player.track.index
+        tid_before = a.player.track.id
         elapsed_before = a.player.elapsed
         boots_before = a.boots
         a.power.toggle()  # the selftest's "press P": switch OFF
@@ -265,8 +267,8 @@ class SelfTestRunner:
         expect(a.display.level == 0.0, "soft-off must turn the backlight off")
         with open(config.STATE_PATH, encoding="utf-8") as f:
             saved = json.load(f)
-        expect(saved.get("track_index") == track_before,
-               f"state file track {saved.get('track_index')} != {track_before}")
+        expect(saved.get("track_id") == tid_before,
+               f"state file track {saved.get('track_id')} != {tid_before}")
         expect(abs(float(saved.get("elapsed", -99)) - elapsed_before) < 2.0,
                f"state file elapsed {saved.get('elapsed')} far from {elapsed_before}")
         press("scroll_down", "scroll_down", "select"); yield 0.4  # ignored while off
@@ -292,14 +294,14 @@ class SelfTestRunner:
                 data = json.load(f)
         except (OSError, ValueError) as e:
             raise SelfTestError(f"state file not written cleanly: {e}")
-        expected = {"track_index": self.songs_ctx[4], "pos": 4, "volume": 60,
+        expected = {"track_id": self.songs_ids[4], "pos": 4, "volume": 60,
                     "brightness": 70}
         for key, want in expected.items():
             if data.get(key) != want:
                 raise SelfTestError(
                     f"state[{key!r}] = {data.get(key)!r}, expected {want!r} "
                     f"(full state: {data})")
-        if data.get("context") != self.songs_ctx:
+        if data.get("context") != self.songs_ids:
             raise SelfTestError("state context does not match the songs context")
 
 

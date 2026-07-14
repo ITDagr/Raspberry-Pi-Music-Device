@@ -12,6 +12,7 @@ Input event vocabulary (InputSource.read):
 """
 from __future__ import annotations
 
+import posixpath
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Optional, Protocol
 
@@ -19,9 +20,19 @@ if TYPE_CHECKING:  # pygame only needed for type hints
     import pygame
 
 
+def track_id(rel_path: str) -> str:
+    """Canonical stable track id: the file's path relative to the music
+    root, normalized to forward slashes with no leading './'. Survives
+    library rebuilds; indices into TRACKS do not."""
+    rel = rel_path.replace("\\", "/")
+    return posixpath.normpath(rel).lstrip("/")
+
+
 @dataclass(frozen=True)
 class Track:
-    """One playable song. `file` is a path on Mac, an MPD URI on the Pi."""
+    """One playable song. `file` is a path on Mac, an MPD URI on the Pi.
+    `id` is the stable identity (path relative to the music root) used by
+    saved state, play contexts, and playlists — never store the index."""
 
     index: int
     title: str
@@ -30,6 +41,7 @@ class Track:
     track_no: int
     duration: float
     file: str
+    id: str = ""
 
 
 class Display(Protocol):
@@ -83,6 +95,10 @@ class Player(Protocol):
     def toggle(self) -> None: ...
     def set_volume(self, v: int) -> None: ...
     def seek_to(self, seconds: float) -> None: ...
+
+    def stop(self) -> None:
+        """Hard stop: silence output and forget the current track (used when
+        the playing file is deleted out from under us)."""
 
     def tick(self) -> None:
         """Call every frame; does throttled polling/bookkeeping."""

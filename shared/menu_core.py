@@ -54,8 +54,23 @@ class _Frame:
 class MenuController:
     def __init__(self, menus: dict[str, Menu], root: str = "home"):
         self.menus = menus
+        self._root = root
         self._stack: list[_Frame] = [_Frame(root)]
         self.last_action: str = ""
+
+    def rebuild(self, menus: dict[str, Menu]) -> None:
+        """Swap in a freshly built tree (the library changed at runtime),
+        preserving as much of the current navigation path as still exists:
+        a vanished menu truncates the stack there, cursors clamp to the new
+        row counts."""
+        self.menus = menus
+        kept: list[_Frame] = []
+        for frame in self._stack:
+            if frame.name not in menus:
+                break
+            frame.cursor = min(frame.cursor, max(0, len(menus[frame.name].items) - 1))
+            kept.append(frame)
+        self._stack = kept or [_Frame(self._root)]
 
     # --- navigation ----------------------------------------------------------
     @property

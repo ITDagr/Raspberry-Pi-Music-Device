@@ -9,7 +9,7 @@ from __future__ import annotations
 import os
 
 from shared import config
-from shared.hardware import Track
+from shared.hardware import Track, track_id
 
 
 def _track_no(raw) -> int:
@@ -43,6 +43,7 @@ def load_tracks() -> list[Track]:
             "track_no": _track_no(e.get("track")),
             "duration": float(e.get("duration") or e.get("time") or 0.0),
             "file": e["file"],
+            "id": track_id(e["file"]),  # MPD URIs are music-root-relative
         })
     rows.sort(key=lambda r: (r["artist"].lower(), r["album"].lower(),
                              r["track_no"], r["title"].lower()))

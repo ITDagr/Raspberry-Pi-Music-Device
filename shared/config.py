@@ -24,6 +24,10 @@ STATE_PATH = (
     str(_REPO_ROOT / ".device_state.json") if IS_MAC else "/home/pi/.device_state.json"
 )
 AUTOSAVE_INTERVAL_S = 10.0      # save while playing, every N seconds
+# The music root anchors stable track ids (paths relative to it). On the Pi
+# it must equal MPD's music_directory (install.sh writes both from here).
+MUSIC_ROOT = str(_REPO_ROOT / "mac" / "_audio") if IS_MAC else "/home/pi/Music"
+TOAST_S = 2.5                   # on-screen toast lifetime
 
 # --- display: ST7789 TFT via the Adafruit EYESPI Pi Beret (#5783) -----------
 # The Beret is a HAT: every pin below is fixed by its routing, not user

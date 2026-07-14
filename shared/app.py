@@ -63,8 +63,12 @@ class App:
         self.dimmer = ScreenDimmer(self.display.set_backlight_level,
                                    log=lambda m: print(f"dimmer  {m}"))
         self.mode = Mode.MENU
-        self.context: list[int] = []
+        self.context: list[str] = []   # stable track ids, never indices
         self.pos = 0
+        self._id_to_index: dict[str, int] = {}
+        self._reindex()
+        self.toast_msg = ""
+        self.toast_until = 0.0
         self.shuffle = False
         self.brightness = config.DEFAULT_BRIGHTNESS
         self.vol_flash_until = 0.0
@@ -82,6 +86,7 @@ class App:
         self.loop_hz = config.FPS      # rate chosen for the current frame
         self._scroll_times: deque = deque()
         self._overlay_was_active = False
+        self._toast_was_active = False
         self._last_status: Optional[dict] = None
         self._last_elapsed_int = -1
         self._last_save = time.monotonic()
@@ -101,13 +106,59 @@ class App:
         return {"clock": pisugar.get_time(), "battery": pisugar.get_battery(),
                 "charging": pisugar.get_charging()}
 
+    # --- track identity ---------------------------------------------------------
+    def _reindex(self) -> None:
+        self._id_to_index = {t.id: t.index for t in self.tracks}
+
+    def _index_of(self, tid: str) -> Optional[int]:
+        return self._id_to_index.get(tid)
+
+    def _resolve_position(self, old_ctx: list, old_pos: int) -> tuple[list[str], Optional[int]]:
+        """Prune `old_ctx` to surviving ids and find where to stand: the
+        first survivor at/after old_pos (wrapping, to match _next_track's
+        modulo advance). (pruned, None) when nothing survives."""
+        ctx = [t for t in old_ctx if isinstance(t, str) and t in self._id_to_index]
+        if not ctx:
+            return [], None
+        old_pos = max(0, min(old_pos, len(old_ctx) - 1)) if old_ctx else 0
+        for tid in list(old_ctx[old_pos:]) + list(old_ctx[:old_pos]):
+            if isinstance(tid, str) and tid in self._id_to_index:
+                return ctx, ctx.index(tid)
+        return ctx, None
+
+    def _toast(self, message: str) -> None:
+        self.toast_msg = message
+        self.toast_until = time.monotonic() + config.TOAST_S
+        self._mark_full()
+
+    def apply_library(self, new_tracks: list) -> None:
+        """The library changed at runtime (web app upload/delete/retag):
+        swap TRACKS in place, rebuild menus preserving the navigation path,
+        re-resolve the id-based context, and never keep playing a ghost."""
+        playing = self.player.track
+        playing_id = playing.id if playing else None
+        self.tracks[:] = new_tracks
+        self._reindex()
+        self.ctrl.rebuild(build_default_menus(self.tracks))
+        self.context, pos = self._resolve_position(self.context, self.pos)
+        self.pos = pos if pos is not None else 0
+        if playing_id is not None and playing_id not in self._id_to_index:
+            # the playing file was deleted out from under us
+            if self.context:
+                self._play(self.context[self.pos])
+                self._toast("Track removed — playing next")
+            else:
+                self.player.stop()
+                self._toast("Track removed")
+        self._mark_full()
+
     def _save_state(self) -> None:
         track = self.player.track
         state_mod.save({
             "context": self.context,
             "pos": self.pos,
             "shuffle": self.shuffle,
-            "track_index": track.index if track else -1,
+            "track_id": track.id if track else "",
             "elapsed": round(self.player.elapsed, 2),
             "volume": self.player.volume,
             "brightness": self.brightness,
@@ -123,24 +174,34 @@ class App:
                                       int(data.get("brightness", config.DEFAULT_BRIGHTNESS))))
             self.player.set_volume(volume)
             self.dimmer.set_wake_level(self.brightness / 100)
-            ti = int(data.get("track_index", -1))
-            if not 0 <= ti < len(self.tracks):
+            tid = data.get("track_id", "")
+            if not isinstance(tid, str) or not tid:
                 return
-            ctx = data.get("context", [])
-            self.context = [i for i in ctx if isinstance(i, int)
-                            and 0 <= i < len(self.tracks)] or [ti]
-            pos = int(data.get("pos", 0))
-            self.pos = pos if 0 <= pos < len(self.context) else 0
+            saved_ctx = data.get("context", [])
+            if not isinstance(saved_ctx, list) or tid not in saved_ctx:
+                saved_ctx = [tid]
+            saved_pos = int(data.get("pos", 0))
             self.shuffle = bool(data.get("shuffle", False))
-            self.player.play_track(ti)
-            elapsed = float(data.get("elapsed", 0.0))
-            if 0 < elapsed < self.tracks[ti].duration:
-                self.player.seek_to(elapsed)
+            self.context, pos = self._resolve_position(saved_ctx, saved_pos)
+            if pos is None:
+                self.pos = 0
+                return  # nothing saved survives: stopped
+            self.pos = pos
+            survivor = self.context[pos]
+            index = self._index_of(survivor)
+            self.player.play_track(index)
+            if survivor == tid:  # same song: resume mid-track
+                elapsed = float(data.get("elapsed", 0.0))
+                if 0 < elapsed < self.tracks[index].duration:
+                    self.player.seek_to(elapsed)
         except (TypeError, ValueError):
             pass  # corrupt fields: keep whatever restored cleanly
 
     # --- playback helpers -------------------------------------------------------
-    def _play(self, index: int) -> None:
+    def _play(self, tid: str) -> None:
+        index = self._index_of(tid)
+        if index is None:
+            return  # pruned between selection and play: ignore
         self.player.play_track(index)
         self._save_state()
 
@@ -218,22 +279,24 @@ class App:
         if act.startswith("play:"):
             self.haptic.click()
             index = int(act.split(":", 1)[1])
+            tid = self.tracks[index].id
             name = self.ctrl.current_name
             if name == "songs" or name.startswith(("artist_", "album_")):
-                self.context = extract_play_context(self.ctrl.menus[name])
+                self.context = [self.tracks[i].id for i in
+                                extract_play_context(self.ctrl.menus[name])]
                 self.shuffle = False
             if not self.context:
-                self.context = [index]
+                self.context = [tid]
                 self.shuffle = False
-            self.pos = self.context.index(index) if index in self.context else 0
-            self._play(index)
+            self.pos = self.context.index(tid) if tid in self.context else 0
+            self._play(tid)
             self.mode = Mode.NOWPLAYING
         elif act == "shuffle":
             self.haptic.click()
             if not self.tracks:
                 return
             self.shuffle = True
-            self.context = list(range(len(self.tracks)))
+            self.context = [t.id for t in self.tracks]
             self.pos = random.randrange(len(self.context))
             self._play(self.context[self.pos])
             self.mode = Mode.NOWPLAYING
@@ -405,6 +468,8 @@ class App:
             self.renderer.draw_about_screen(surface, self.about_scroll, st)
         if time.monotonic() < self.vol_flash_until:
             self.renderer.draw_volume_overlay(surface, self.player.volume)
+        if time.monotonic() < self.toast_until:
+            self.renderer.draw_toast(surface, self.toast_msg)
 
     # --- soft power -------------------------------------------------------------
     def _boot(self, surface) -> None:
@@ -543,6 +608,10 @@ class App:
             if self._overlay_was_active and not overlay_active:
                 self._mark_full()
             self._overlay_was_active = overlay_active
+            toast_active = now < self.toast_until
+            if self._toast_was_active and not toast_active:
+                self._mark_full()  # toast expired: repaint beneath it
+            self._toast_was_active = toast_active
 
             if self.player.playing and now - self._last_save > config.AUTOSAVE_INTERVAL_S:
                 self._save_state()

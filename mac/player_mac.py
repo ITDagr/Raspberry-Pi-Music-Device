@@ -89,6 +89,18 @@ class PlayerMac:
         self._playing = True
         self._finished = False
 
+    def stop(self) -> None:
+        """Hard stop: the current file vanished (deleted via the web app)."""
+        if self._audio_ok:
+            try:
+                pygame.mixer.music.stop()
+            except pygame.error:
+                pass
+        self._track = None
+        self._playing = False
+        self._base = 0.0
+        self._finished = False
+
     def tick(self) -> None:
         if self._playing and self._track and self.elapsed >= self._track.duration:
             self._playing = False

@@ -447,6 +447,19 @@ class ScreenRenderer:
         self._render(surface, "Rotate wheel to adjust", self._font(11), C_DIM,
                      SIZE // 2, cy + 60, "midtop")
 
+    def draw_toast(self, surface, message: str) -> None:
+        """Transient notification card along the bottom edge (library
+        changes arriving from the web app: added / removed / playlist)."""
+        f = self._font(12, bold=True)
+        text = self._fit(message, f, SIZE - MARGIN * 4 - 16)
+        w = f.size(text)[0] + 28
+        h = 30
+        x = (SIZE - w) // 2
+        y = SIZE - h - 10
+        pygame.draw.rect(surface, C_SURFACE, (x, y, w, h), border_radius=h // 2)
+        pygame.draw.rect(surface, C_ACCENT, (x, y + 6, 3, h - 12), border_radius=2)
+        self._render(surface, text, f, C_TEXT, x + w // 2 + 2, y + h // 2, "center")
+
     def draw_display_test(self, surface) -> None:
         """Static hardware test pattern (`--display-test` on the Pi).
 

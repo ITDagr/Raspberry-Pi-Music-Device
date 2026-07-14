@@ -127,6 +127,16 @@ class PlayerMPD:
         self._elapsed = seconds
         self._elapsed_at = time.monotonic()
 
+    def stop(self) -> None:
+        """Hard stop: the current file vanished (deleted via the web app)."""
+        self._cmd("stop")
+        self._cmd("clear")
+        self._track = None
+        self._playing = False
+        self._elapsed = 0.0
+        self._last_state = "stop"
+        self._finished = False
+
     def tick(self) -> None:
         pass  # event-driven: the idle thread keeps state fresh
 

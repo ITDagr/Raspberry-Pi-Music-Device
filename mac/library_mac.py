@@ -14,7 +14,7 @@ import wave
 from array import array
 from pathlib import Path
 
-from shared.hardware import Track
+from shared.hardware import Track, track_id
 
 RATE = 22050
 AUDIO_DIR = Path(__file__).resolve().parent / "_audio"
@@ -62,10 +62,12 @@ def _build_catalog() -> None:
                                 eighth_samples, n_notes, seed))
     entries.sort(key=lambda e: (e[0].lower(), e[1].lower(), e[2]))
     for index, (artist, album, track_no, title, ei, nn, seed) in enumerate(entries):
+        filename = f"track_{index:03d}.wav"
         TRACKS.append(Track(
             index=index, title=title, artist=artist, album=album,
             track_no=track_no, duration=nn * ei / RATE,
-            file=str(AUDIO_DIR / f"track_{index:03d}.wav"),
+            file=str(AUDIO_DIR / filename),
+            id=track_id(filename),  # AUDIO_DIR is the Mac music root
         ))
         _PARAMS[index] = (ei, nn, seed)
 
