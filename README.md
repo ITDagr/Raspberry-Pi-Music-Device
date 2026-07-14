@@ -30,12 +30,13 @@ with no hardware at all.
    (`http://localhost:8080`) — open it to try uploads and playlists
    against the simulator. Controls:
 
-   | Key | Does |
+   | Key | Simulates |
    |---|---|
    | ↑ / ↓ | wheel detents — scroll menus, volume in Now Playing |
-   | Enter / Space | select · play/pause |
-   | → / ← | next/previous track · select/back in menus |
-   | Backspace | back |
+   | Enter / Space | **center button**: tap = select · **hold ≥ 0.6 s = back**, exactly like the hardware |
+   | W / S | ring up / down buttons |
+   | A / D (or ← →) | ring left / right buttons |
+   | Backspace | back (keyboard convenience) |
    | P | toggle the (soft) power switch |
    | Esc / close window | quit |
 

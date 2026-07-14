@@ -5,11 +5,19 @@
 | Mac key | Device control | Does |
 |---|---|---|
 | ↑ / ↓ | wheel detents | menus: cursor · Now Playing: volume ±5 · brightness/about: adjust |
-| Enter / Space | center press | select / play-pause |
-| → | right | select (menus) · next track (Now Playing) |
-| ← | left | back (menus) · previous track (Now Playing) |
-| Backspace | center hold 600 ms | **back — leaves the current screen everywhere** |
+| Enter / Space (tap) | center press | select / play-pause |
+| Enter / Space (**hold ≥ 0.6 s**) | center hold | **back — leaves the current screen everywhere** (fires at the threshold; the release is swallowed, exactly like the hardware) |
+| W / S | ring up / down | same as wheel detents |
+| D or → | ring right | select (menus) · next track (Now Playing) |
+| A or ← | ring left | back (menus) · previous track (Now Playing) |
+| Backspace | — | back (keyboard convenience; the device gesture is the hold) |
+| P | slide switch | soft power off / on |
 | Esc / close | — | quit (state saved) |
+
+The center button's tap/hold gesture machine is one piece of shared code
+(`shared/encoder.py`) driven by both the Pi's seesaw and the Mac's
+keyboard, so what you feel in the simulator is what the hardware does —
+including the rule that only a short center press wakes a dark screen.
 
 Spinning the wheel fast (>6 detents within 1 s) accelerates menu scrolling
 to 3 rows per detent (`ENCODER_ACCEL` in config).

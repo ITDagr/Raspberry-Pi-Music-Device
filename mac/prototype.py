@@ -6,13 +6,16 @@ Frame dumps:       python3 mac/prototype.py --dump-frames <dir>
                    (selftest run that also saves a PNG of every screen)
 
 Opens a 480x480 window (2x scale of the 240x240 TFT) and runs the exact same
-shared.app main loop as the Pi, with keyboard/terminal stand-ins for hardware:
+shared.app main loop as the Pi, with keyboard/terminal stand-ins for hardware.
+Every encoder control is simulated with its REAL gesture semantics (the
+center button runs the same shared machine as the Pi):
 
-    ↑ / ↓        wheel detents (scroll)
-    Enter/Space  select
-    →  /  ←      right / left
-    Backspace    back
-    Esc / close  quit
+    ↑ / ↓          wheel detents (scroll)
+    Enter/Space    center button — tap select · HOLD >= 0.6 s back
+    W / S          ring up / down buttons
+    A / D or ← →   ring left / right buttons
+    Backspace      back (keyboard convenience)
+    P              power switch    Esc / close  quit
 
 --selftest swaps the keyboard for a scripted input source, runs the real loop
 uncapped under SDL dummy drivers, and walks menus, playback, volume, bright-
@@ -496,7 +499,8 @@ def main() -> int:
         web_events = queue.Queue()
         webapp_port = start_webapp(store, web_events.put)
         print(f"web app:  http://localhost:{webapp_port}")
-    print("controls: ↑/↓ wheel · Enter/Space select · → right · ← left · "
+    print("controls: ↑/↓ wheel · Enter tap select / HOLD 0.6s back · "
+          "W/S ring up/down · A/D or ←/→ ring left/right · "
           "Backspace back · P power switch · Esc quit")
     print("Haptic events print here:")
     power = MockPowerSwitch()

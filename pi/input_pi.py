@@ -16,6 +16,7 @@ from __future__ import annotations
 import time
 
 from shared import config
+from shared.encoder import CenterButton
 
 _BUTTONS = {
     "select": config.SEESAW_BTN_SELECT,
@@ -43,8 +44,7 @@ class ANOInput:
         now = time.monotonic()
         self._pressed = {name: False for name in _BUTTONS}
         self._changed_at = {name: now for name in _BUTTONS}
-        self._select_down_at = 0.0
-        self._select_hold_fired = False
+        self._center = CenterButton()  # shared select/hold-to-back machine
         self._warned = False
         self.quit_requested = False
 
@@ -96,18 +96,14 @@ class ANOInput:
                 self._changed_at[name] = now
                 if name == "select":
                     if pressed:
-                        self._select_down_at = now
-                        self._select_hold_fired = False
-                    elif not self._select_hold_fired:
-                        events.append("select")  # short press fires on release
+                        self._center.press(now)
+                    else:
+                        events.extend(self._center.release(now))
                 elif pressed:
                     events.append(name)
 
         # long-press select -> back, fired at the threshold while still held
-        if (self._pressed["select"] and not self._select_hold_fired
-                and now - self._select_down_at >= config.BACK_HOLD_S):
-            self._select_hold_fired = True
-            events.append("back")
+        events.extend(self._center.poll(now))
 
         # Beret tactile buttons: active-low, debounced edges, fire on press
         for pin, ev in self._beret.items():
