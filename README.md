@@ -1,3 +1,4 @@
+<img width="2160" height="1130" alt="v3_Case_Prototype_2026-Sep-02_01-20-18AM-000_CustomizedView29021399754" src="https://github.com/user-attachments/assets/fa7c127c-6085-4c54-b308-e0e225429f4f" />
 # Raspberry-Pi-Music-Device
 A Bluetooth music player based on the Raspberry Pi Zero
 This is My ESP32 Music Device, which was focused on a simple goal, the ability to disconnect from society while still having access to music through Bluetooth headphones or a speaker. It is a primative prototype that lacks a battery, a proper case, and the overall feature set such as haptics and LED's. This was simply a proof of concept and firmware test and was my first experience into the world of AI software design.
