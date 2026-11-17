@@ -170,8 +170,8 @@ def build_default_menus(tracks: list[Track],
     used: set = set()
 
     menus["home"] = Menu("device", [
-        MenuItem("Music", "menu:music"),
         MenuItem("Now Playing", "mode:nowplaying"),
+        MenuItem("Music", "menu:music"),
         MenuItem("Shuffle All", "do:shuffle"),
         MenuItem("Settings", "menu:settings"),
     ])

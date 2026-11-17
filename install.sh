@@ -98,13 +98,19 @@ say "6/7  Installing the device service (starts the UI at boot)"
 sudo tee /etc/systemd/system/pimusicdevice.service >/dev/null <<EOF
 [Unit]
 Description=pimusicdevice — pocket music player
-After=network-online.target mpd.service bluetooth.service sound.target
+# NOT after network-online.target: the app manages WiFi itself and the web app
+# binds without a live network, so waiting for DHCP added ~10-20s of dead time
+# to every boot (see systemd/pimusicdevice.service).
+After=mpd.service bluetooth.service sound.target
 Wants=mpd.service
+# never permanently give up restarting (see systemd/pimusicdevice.service)
+StartLimitIntervalSec=0
 
 [Service]
 Type=simple
 User=$RUN_USER
 WorkingDirectory=$REPO_DIR
+ExecStartPre=+/bin/sh $REPO_DIR/pi/unblock_bluetooth.sh
 ExecStart=/usr/bin/python3 $REPO_DIR/pi/device.py
 Restart=on-failure
 RestartSec=3

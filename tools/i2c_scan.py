@@ -22,7 +22,10 @@ def _scan_smbus(bus_num: int) -> list[int] | None:
         with SMBus(bus_num) as bus:
             for addr in range(0x03, 0x78):
                 try:
-                    bus.read_byte(addr)
+                    # a quick write (no data) matches i2cdetect's default probe;
+                    # read_byte() sends an actual receive-byte transaction, which
+                    # register-based chips (e.g. the ANO encoder's seesaw) NAK
+                    bus.write_quick(addr)
                     found.append(addr)
                 except OSError:
                     pass

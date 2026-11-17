@@ -39,6 +39,7 @@ def test_cursor_wraps_both_ways(ctrl):
 
 
 def test_enter_and_back_stack(ctrl):
+    ctrl.scroll_down()                       # Now Playing -> Music
     assert ctrl.select() == "enter"          # Music
     assert ctrl.current_name == "music"
     ctrl.back()
@@ -57,10 +58,9 @@ def test_back_restores_cursor(ctrl):
 
 
 def test_select_result_semantics(ctrl):
-    ctrl.scroll_down()                       # Now Playing
-    assert ctrl.select() == "mode"
+    assert ctrl.select() == "mode"           # Now Playing (now first)
     assert ctrl.last_action == "nowplaying"
-    ctrl.scroll_down()                       # Shuffle All
+    ctrl.scroll_down(); ctrl.scroll_down()   # Music -> Shuffle All
     assert ctrl.select() == "action"
     assert ctrl.last_action == "shuffle"
 
@@ -74,6 +74,7 @@ def test_bluetooth_is_a_mode(ctrl):
 
 
 def test_play_payload_from_songs(ctrl):
+    ctrl.scroll_down()                       # Now Playing -> Music
     ctrl.select()                            # music
     ctrl.scroll_down(); ctrl.scroll_down(); ctrl.scroll_down()
     ctrl.select()                            # songs (after Playlists/Artists/Albums)
@@ -104,6 +105,7 @@ def test_songs_context_sorted_artist_title(ctrl):
 
 def test_view_window_and_scroll(tracks):
     ctrl = MenuController(build_default_menus(tracks))
+    ctrl.scroll_down()                       # Now Playing -> Music
     ctrl.select()                            # music
     ctrl.scroll_down(); ctrl.scroll_down(); ctrl.scroll_down()
     ctrl.select()                            # songs, 6 rows > 5 visible

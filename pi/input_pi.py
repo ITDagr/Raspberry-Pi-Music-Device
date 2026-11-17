@@ -14,6 +14,7 @@ only claimed for mapped buttons.
 from __future__ import annotations
 
 import time
+from collections import deque
 
 from shared import config
 from shared.encoder import CenterButton
@@ -33,19 +34,46 @@ class ANOInput:
         from adafruit_seesaw import rotaryio
         from adafruit_seesaw.seesaw import Seesaw
 
-        self._ss = Seesaw(board.I2C(), addr=config.SEESAW_ADDR)
-        self._mask = 0
+        mask = 0
         for pin in _BUTTONS.values():
-            self._mask |= 1 << pin
-        self._ss.pin_mode_bulk(self._mask, self._ss.INPUT_PULLUP)
-        self._encoder = rotaryio.IncrementalEncoder(self._ss)
-        self._last_position = self._encoder.position
+            mask |= 1 << pin
+
+        # On a cold boot the I2C bus and the seesaw itself can need several
+        # seconds to settle — until then its own hardware-ID read comes back
+        # corrupt and Seesaw() raises. That's transient, not a wiring fault,
+        # so keep retrying init for a generous window within this single
+        # launch. Crashing instead would lean on systemd's restart, which
+        # gives up permanently after StartLimitBurst crashes — the exact
+        # "doesn't come back after a power cycle" failure.
+        deadline = time.monotonic() + config.ENCODER_INIT_RETRY_WINDOW_S
+        attempt = 0
+        while True:
+            attempt += 1
+            try:
+                self._ss = Seesaw(board.I2C(), addr=config.SEESAW_ADDR)
+                self._ss.pin_mode_bulk(mask, self._ss.INPUT_PULLUP)
+                self._encoder = rotaryio.IncrementalEncoder(self._ss)
+                self._last_position = self._encoder.position
+                if attempt > 1:
+                    print(f"input: encoder init succeeded on attempt {attempt}")
+                break
+            except Exception as e:
+                if time.monotonic() >= deadline:
+                    raise
+                if attempt == 1:  # one line, not one per retry
+                    print(f"input: encoder not ready, retrying up to "
+                          f"{config.ENCODER_INIT_RETRY_WINDOW_S:.0f}s ({e})")
+                time.sleep(config.ENCODER_INIT_RETRY_DELAY_S)
+
+        self._mask = mask
 
         now = time.monotonic()
         self._pressed = {name: False for name in _BUTTONS}
         self._changed_at = {name: now for name in _BUTTONS}
         self._center = CenterButton()  # shared select/hold-to-back machine
         self._warned = False
+        self._delta_warned = False
+        self._detent_window: deque[tuple[float, int]] = deque()
         self.quit_requested = False
 
         # Beret tactile buttons: claim GPIO only for pins mapped to an event
@@ -78,6 +106,28 @@ class ANOInput:
         position = self._encoder.position
         delta = position - self._last_position
         self._last_position = position
+
+        # a noisy connection can trickle small-but-individually-plausible
+        # deltas every single frame, forever — a magnitude check on one read
+        # can't see that, so track total |detents| over a trailing window
+        # regardless of per-frame size (see config.ENCODER_FAULT_MAX_DETENTS)
+        self._detent_window.append((now, min(abs(delta), config.MAX_ENCODER_DELTA)))
+        while (self._detent_window
+               and now - self._detent_window[0][0] > config.ENCODER_FAULT_WINDOW_S):
+            self._detent_window.popleft()
+        recent_total = sum(count for _, count in self._detent_window)
+
+        if abs(delta) > config.MAX_ENCODER_DELTA or recent_total > config.ENCODER_FAULT_MAX_DETENTS:
+            # a real spin can't produce this many detents in one frame, or
+            # this many sustained over the window — a flaky I2C read/noisy
+            # connection can. Drop it rather than flood the event queue.
+            if not self._delta_warned:
+                print(f"input: ignoring implausible encoder activity "
+                      f"(delta={delta}, {recent_total} detents/"
+                      f"{config.ENCODER_FAULT_WINDOW_S:.0f}s) — "
+                      "check the STEMMA QT connection")
+                self._delta_warned = True
+            delta = 0
         if config.ENCODER_REVERSED:
             delta = -delta
         if delta > 0:

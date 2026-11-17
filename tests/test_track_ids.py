@@ -4,6 +4,7 @@ keep playing a ghost."""
 from __future__ import annotations
 
 import os
+import time
 
 os.environ.setdefault("SDL_VIDEODRIVER", "dummy")
 
@@ -165,7 +166,70 @@ def test_delete_everything_stops_cleanly():
 def test_rebuild_preserves_navigation_path():
     tracks = _tracks(4)
     a = _make_app(tracks)
+    a.ctrl.scroll_down()  # Now Playing -> Music
     a.ctrl.select()  # home -> music
     assert a.ctrl.current_name == "music"
     a.apply_library(_tracks(3))
     assert a.ctrl.current_name == "music"  # path survived the rebuild
+
+
+def _enter_connected_bt(a):
+    """Put the app on the Bluetooth 'connected' confirmation screen."""
+    a.mode = app_mod.Mode.BLUETOOTH
+    a.bt_connect_info = {"name": "AirPods", "address": "AA:BB:CC:DD:EE:FF",
+                         "state": "connected"}
+    a.bt_connected_at = time.monotonic()
+
+
+def test_bt_connected_screen_auto_returns_to_menu():
+    a = _make_app(_tracks(3))
+    _enter_connected_bt(a)
+    # still within the show window: stays put
+    a._bluetooth_frame()
+    assert a.mode is app_mod.Mode.BLUETOOTH
+    # after the window elapses: auto-returns to the menu, no dead-end
+    a.bt_connected_at = time.monotonic() - config.BT_CONNECTED_SHOW_S - 0.1
+    a._bluetooth_frame()
+    assert a.mode is app_mod.Mode.MENU
+    assert a.bt_connect_info is None
+
+
+def test_bt_connected_screen_any_button_dismisses_to_menu():
+    for ev in ("select", "back", "right", "scroll_down"):
+        a = _make_app(_tracks(3))
+        _enter_connected_bt(a)
+        a._bluetooth_event(ev)
+        assert a.mode is app_mod.Mode.MENU, f"{ev} should exit to menu"
+        assert a.bt_connect_info is None
+
+
+class _FakeBT:
+    def __init__(self, connected):
+        self._connected = connected
+    def check_connected(self, address):
+        return self._connected
+
+
+def _enter_connecting_bt(a, bt):
+    a.bt = bt
+    a.mode = app_mod.Mode.BLUETOOTH
+    a.bt_connect_info = {"name": "AirPods", "address": "AA:BB:CC:DD:EE:FF",
+                         "state": "connecting"}
+    a.bt_connect_start = time.monotonic() - config.BT_CONNECT_MAX_S - 0.1
+
+
+def test_bt_connecting_reports_failure_when_never_connected():
+    # BlueZ never reports Connected: yes -> after the window, the UI must
+    # tell the truth (clear the attempt), not show a false "connected"
+    a = _make_app(_tracks(3))
+    _enter_connecting_bt(a, _FakeBT(connected=False))
+    a._bluetooth_frame()
+    assert a.bt_connect_info is None  # attempt dropped, no false check
+
+
+def test_bt_connecting_shows_connected_only_when_bluez_confirms():
+    a = _make_app(_tracks(3))
+    _enter_connecting_bt(a, _FakeBT(connected=True))
+    a._bluetooth_frame()
+    assert a.bt_connect_info is not None
+    assert a.bt_connect_info["state"] == "connected"

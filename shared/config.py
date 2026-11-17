@@ -92,6 +92,20 @@ SEESAW_BTN_RIGHT = 5            # match your wiring
 DEBOUNCE_S = 0.005              # 5 ms button debounce
 BACK_HOLD_S = 0.6               # hold select this long -> "back"
 ENCODER_REVERSED = False        # flip if CW scrolls the wrong way
+MAX_ENCODER_DELTA = 40          # discard a single read past this — a real spin
+                                 # can't hit it; a flaky I2C read can
+ENCODER_FAULT_WINDOW_S = 2.0    # trailing window for the noise-rate breaker
+ENCODER_FAULT_MAX_DETENTS = 120  # >60 detents/s sustained — 10x the fastest
+                                  # real spin (see ACCEL_DETENTS below); past
+                                  # this it's a noisy connection, not a human
+ENCODER_INIT_RETRY_WINDOW_S = 20.0  # on a cold boot the I2C bus / seesaw can
+                                     # need several seconds to settle, so its
+                                     # own hardware-ID read comes back corrupt
+                                     # at first; keep retrying init for this
+                                     # long within one launch rather than
+                                     # crashing and leaning on systemd (which
+                                     # gives up after StartLimitBurst crashes)
+ENCODER_INIT_RETRY_DELAY_S = 0.5
 
 # v2 improvement: encoder acceleration, menus only (feature flag)
 ENCODER_ACCEL = True
@@ -99,8 +113,13 @@ ACCEL_DETENTS = 6               # more than this many detents ...
 ACCEL_WINDOW_S = 1.0            # ... within this window ...
 ACCEL_STEP = 3                  # ... makes each detent move this many rows
 
-# --- haptics: DRV2605L, LRA mode + LRA ROM library --------------------------
+# --- haptics: DRV2605L ------------------------------------------------------
 DRV2605_ADDR = 0x5A             # fixed chip address, I2C bus 1 (optional device)
+# Motor type must match the physical actuator or it barely moves: an ERM
+# (Adafruit vibrating mini motor disc) needs ERM mode + an ERM ROM library;
+# an LRA needs LRA mode + library 6. HAPTIC_LIBRARY: 1-5 = ERM, 6 = LRA.
+HAPTIC_MOTOR = "erm"            # "erm" or "lra"
+HAPTIC_LIBRARY = 1              # DRV2605 ROM waveform library for the motor
 EFFECT_TICK = 14                # scroll detent
 EFFECT_CLICK = 1                # select
 EFFECT_BACK = 7                 # navigate back
@@ -111,7 +130,9 @@ MPD_HOST = "127.0.0.1"
 MPD_PORT = 6600
 MPD_RETRY_S = 2.0               # idle-thread reconnect backoff when MPD is down
 DEFAULT_VOLUME = 50             # 0-100
-VOLUME_STEP = 5
+VOLUME_STEP = 2                 # per wheel detent in Now Playing — small for
+                                 # precise control (wheel is direction-reversed
+                                 # there: up = quieter, down = louder)
 VOLUME_FLASH_S = 1.5            # volume overlay lifetime
 PREV_RESTART_AFTER_S = 3.0      # iPod-style previous: restart if elapsed > this
 
@@ -165,8 +186,8 @@ SOFT_OFF_POLL_HZ = 4.0          # switch poll rate while soft-off
 POWER_SWITCH_ACTION = "soft_off"
 
 # --- screen dimmer ------------------------------------------------------------
-DIM_AFTER_S = 15.0              # idle seconds before dimming
-SLEEP_AFTER_S = 60.0            # idle seconds before backlight off
+DIM_AFTER_S = 25.0              # idle seconds before dimming
+SLEEP_AFTER_S = 60.0            # idle seconds before backlight off (black)
 DIM_LEVEL = 0.15
 WAKE_LEVEL = 0.7                # default awake brightness (0.1-1.0)
 DEFAULT_BRIGHTNESS = 70         # brightness screen value, percent
@@ -176,7 +197,11 @@ BRIGHTNESS_MAX = 100
 
 # --- bluetooth ------------------------------------------------------------------
 BT_CONNECT_MIN_S = 2.5          # minimum time shown in "connecting" state
-BT_CONNECT_MAX_S = 4.0          # after this we assume connected regardless
+BT_CONNECT_MAX_S = 15.0         # poll BlueZ for a real connection up to here
+                                 # (a first-time pair+connect is slow); past
+                                 # this, report failure — never a false check
+BT_CONNECTED_SHOW_S = 2.0       # show "Connected" this long, then auto-return
+                                 # to the menu (no dead-end confirmation screen)
 BT_SCAN_S = 6.0                 # Pi: bluetoothctl scan window
 
 # --- ui -------------------------------------------------------------------------

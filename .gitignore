@@ -6,3 +6,40 @@ mac/_audio/
 .device_state.json.tmp
 .pytest_cache/
 .DS_Store
+
+# Virtual environments
+venv/
+env/
+.env/
+*.egg-info/
+build/
+dist/
+
+# Python caches
+__pycache__/
+*.py[cod]
+.mypy_cache/
+.ruff_cache/
+
+# Large media files
+*.mp3
+*.wav
+*.flac
+*.m4a
+*.aac
+*.ogg
+*.opus
+*.mp4
+*.mov
+*.zip
+
+# Secrets / credentials (never commit)
+.env
+.env.*
+*.pem
+*.key
+id_rsa*
+id_ed25519*
+secrets.*
+wpa_supplicant*.conf
+*.nmconnection

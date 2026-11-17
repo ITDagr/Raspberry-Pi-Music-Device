@@ -1,4 +1,4 @@
-"""device v2 — DRV2605L haptic driver (LRA motor, LRA ROM library).
+"""device v2 — DRV2605L haptic driver (motor mode/library from config).
 
 Effects: tick=14 (scroll detent), click=1 (select), back=7, pulse=47 (boot).
 make_haptic() probes the chip once at boot (constructing the driver reads
@@ -20,8 +20,11 @@ class HapticPi:
         import adafruit_drv2605
 
         drv = adafruit_drv2605.DRV2605(board.I2C(), address=config.DRV2605_ADDR)
-        drv.use_LRM()          # LRA motor
-        drv.library = 6        # LRA ROM effect library
+        if config.HAPTIC_MOTOR == "lra":
+            drv.use_LRM()      # LRA motor (resonant AC drive)
+        else:
+            drv.use_ERM()      # ERM motor, e.g. Adafruit mini vibrating disc
+        drv.library = config.HAPTIC_LIBRARY
         self._drv = drv
         self._effect_cls = adafruit_drv2605.Effect
         self._warned = False

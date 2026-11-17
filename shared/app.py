@@ -86,6 +86,7 @@ class App:
         self.bt_cursor = 0
         self.bt_connect_info: Optional[dict] = None
         self.bt_connect_start = 0.0
+        self.bt_connected_at = 0.0     # when we entered the "connected" state
         self.bt_scanning = False
         self._bt_scan_gen = 0          # bumped to cancel an in-flight scan
         self._bt_scan_result: Optional[tuple[int, list[dict]]] = None
@@ -369,9 +370,9 @@ class App:
 
     def _nowplaying_event(self, ev: str) -> None:
         if ev == "scroll_up":
-            self._nudge_volume(config.VOLUME_STEP)
+            self._nudge_volume(-config.VOLUME_STEP)  # reversed: up = quieter
         elif ev == "scroll_down":
-            self._nudge_volume(-config.VOLUME_STEP)
+            self._nudge_volume(config.VOLUME_STEP)   # reversed: down = louder
         elif ev == "select":
             self.haptic.click()
             self.player.toggle()
@@ -415,16 +416,20 @@ class App:
 
     def _bluetooth_event(self, ev: str) -> None:
         info = self.bt_connect_info
-        if ev in ("left", "back"):
+        if info and info["state"] == "connected":
+            # any button dismisses the confirmation straight to the menu —
+            # it auto-returns anyway (see _bluetooth_frame), this just lets an
+            # impatient press skip the wait instead of doing nothing
             self.haptic.back()
-            if info and info["state"] == "connected":
-                self.bt_connect_info = None  # back to the device list
-            else:
-                self.bt_connect_info = None
-                if self.bt_scanning:  # cancel: a late result is discarded
-                    self.bt_scanning = False
-                    self._bt_scan_gen += 1
-                self.mode = Mode.MENU
+            self.bt_connect_info = None
+            self.mode = Mode.MENU
+        elif ev in ("left", "back"):
+            self.haptic.back()
+            self.bt_connect_info = None
+            if self.bt_scanning:  # cancel: a late result is discarded
+                self.bt_scanning = False
+                self._bt_scan_gen += 1
+            self.mode = Mode.MENU
         elif info is None:
             if ev == "scroll_up":
                 self.bt_cursor = (self.bt_cursor - 1) % max(1, len(self.bt_devices))
@@ -538,18 +543,32 @@ class App:
         info = self.bt_connect_info
         if self.mode is Mode.BLUETOOTH and info and info["state"] == "connecting":
             t = time.monotonic() - self.bt_connect_start
-            done = False
             if t > config.BT_CONNECT_MIN_S:
-                if t > config.BT_CONNECT_MAX_S:
-                    done = True
-                else:
-                    try:
-                        done = self.bt.check_connected(info["address"])
-                    except Exception:
-                        done = False
-            if done:
-                info["state"] = "connected"
+                connected = False
+                try:
+                    connected = self.bt.check_connected(info["address"])
+                except Exception:
+                    connected = False
+                if connected:
+                    info["state"] = "connected"
+                    self.bt_connected_at = time.monotonic()
+                    self.dimmer.wake()  # don't let the confirmation dim to black
+                elif t > config.BT_CONNECT_MAX_S:
+                    # gave it long enough and BlueZ never reported Connected —
+                    # tell the truth instead of showing a false check
+                    self._toast(f"Couldn't connect to {info['name']}")
+                    self.bt_connect_info = None
+                    self.dimmer.wake()
             self._mark_full()  # animate the spinner / show the change
+        elif self.mode is Mode.BLUETOOTH and info and info["state"] == "connected":
+            # "Connected" is a confirmation, not a place to live — show it
+            # briefly, keeping the screen awake, then return to the menu so
+            # the user isn't stranded on a static dead-end screen
+            self.dimmer.wake()
+            if time.monotonic() - self.bt_connected_at > config.BT_CONNECTED_SHOW_S:
+                self.bt_connect_info = None
+                self.mode = Mode.MENU
+            self._mark_full()
 
     def _render(self, surface) -> None:
         st = self._status()
@@ -680,8 +699,11 @@ class App:
                     return
                 if self.dimmer.state is not DimState.AWAKE:
                     # dark screen: only the center button does anything — it
-                    # wakes, and the waking press is swallowed (no select)
-                    if ev == "select":
+                    # wakes, and the waking press is swallowed. Accept both a
+                    # tap ("select") and a hold ("back") so any center press
+                    # reliably turns the screen back on. Power off/on is the
+                    # Beret switch alone; the center press never toggles power.
+                    if ev in ("select", "back"):
                         self.dimmer.wake()
                         self._mark_full()
                     continue
