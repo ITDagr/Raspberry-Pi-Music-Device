@@ -3,7 +3,7 @@
 
 
 A Bluetooth music player based on the Raspberry Pi Zero
-This is My Raspberry Pi Music Device, which was focused on a simple goal, the ability to disconnect from society while still having access to music through Bluetooth headphones or a speaker. It is a primative prototype that lacks a battery, a proper case, and the overall feature set such as haptics and LED's. This was simply a proof of concept and firmware test and was my first experience into the world of AI software design.
+This is My Raspberry Pi Music Device, which was focused on my goal, the ability to disconnect from society while still having access to music through Bluetooth headphones . It is a primative prototype that lacks a battery, a proper case, and the overall feature set such as haptics and LED's. This was simply a proof of concept and firmware test.
 
 BOM:
 1.54' 240 x 240 display, 
