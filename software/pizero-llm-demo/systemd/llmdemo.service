@@ -1,0 +1,28 @@
+[Unit]
+Description=pizero-llm-demo UI (ST7789 panel + ANO encoder)
+After=llamad.service
+Wants=llamad.service
+
+# StartLimitIntervalSec belongs in [Unit], not [Service] -- systemd warns and
+# ignores it in [Service]. 0 = never permanently give up restarting, so a
+# boot-time SD stall cannot wedge the unit in `failed` until someone SSHes in.
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+User=@USER@
+WorkingDirectory=@APP_DIR@
+Environment=PYTHONUNBUFFERED=1
+ExecStart=@APP_DIR@/.venv/bin/python -m app.main
+
+Restart=always
+RestartSec=3
+
+# app/main.py installs a SIGTERM handler that exits the loop and blanks the
+# panel, so `systemctl restart` completes in well under a second rather than
+# hanging until the stop timeout expires.
+KillSignal=SIGTERM
+TimeoutStopSec=5
+
+[Install]
+WantedBy=multi-user.target
