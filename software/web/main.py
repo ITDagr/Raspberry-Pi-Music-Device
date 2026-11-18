@@ -162,6 +162,7 @@ class _InstantClock:
 
 # --- the async main loop -------------------------------------------------------
 async def main() -> None:
+    print("demo: starting")
     pygame.mixer.pre_init(22050, -16, 1, 1024)
     pygame.init()
     tracks = library_mac.TRACKS
@@ -186,6 +187,7 @@ async def main() -> None:
         display.push_frame(frame)
         await asyncio.sleep(1 / 60)
     del frames
+    print("demo: running")  # the smoke test waits for this line
 
     clock = pygame.time.Clock()
     next_dim = 0.0

@@ -28,6 +28,15 @@ jobs:
       - run: pip install pygbag==0.9.3
       - run: python software/web/build.py
       - run: test -f software/web/build/device/build/web/index.html
+      - name: Smoke test the demo in headless Chromium
+        run: |
+          pip install playwright==1.48.0
+          python -m playwright install --with-deps chromium
+          python software/web/smoke_test.py software/web/build/device/build/web
+      - name: Check the live site too (information only)
+        if: github.event_name == 'pull_request'
+        continue-on-error: true
+        run: python software/web/smoke_test.py https://itdagr.github.io/Raspberry-Pi-Music-Device/
       - uses: actions/upload-pages-artifact@v3
         with:
           path: software/web/build/device/build/web
