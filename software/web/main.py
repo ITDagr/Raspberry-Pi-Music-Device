@@ -160,9 +160,22 @@ class _InstantClock:
         return 0
 
 
+def _say(msg: str) -> None:
+    """Print, and in the browser also log to the JS console (pygbag sends
+    print() to its on-page terminal, which the smoke test can't read)."""
+    print(msg)
+    if sys.platform == "emscripten":
+        try:
+            import platform
+
+            platform.window.console.log(msg)
+        except Exception:
+            pass
+
+
 # --- the async main loop -------------------------------------------------------
 async def main() -> None:
-    print("demo: starting")
+    _say("demo: starting")
     pygame.mixer.pre_init(22050, -16, 1, 1024)
     pygame.init()
     tracks = library_mac.TRACKS
@@ -187,7 +200,7 @@ async def main() -> None:
         display.push_frame(frame)
         await asyncio.sleep(1 / 60)
     del frames
-    print("demo: running")  # the smoke test waits for this line
+    _say("demo: running")  # the smoke test waits for this line
 
     clock = pygame.time.Clock()
     next_dim = 0.0
