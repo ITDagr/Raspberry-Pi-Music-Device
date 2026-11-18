@@ -10,7 +10,7 @@ are never regenerated.
 from __future__ import annotations
 
 import random
-import wave
+import struct
 from array import array
 from pathlib import Path
 
@@ -110,11 +110,19 @@ def _gen_track(path: Path, eighth_samples: int, n_notes: int, seed: int) -> None
             note = root + rng.choice((0, 0, 5, 7))
             block = _square_block(_midi_hz(note), eighth_samples, 7000)
         samples.extend(block)
-    with wave.open(str(path), "wb") as wf:
-        wf.setnchannels(1)
-        wf.setsampwidth(2)
-        wf.setframerate(RATE)
-        wf.writeframes(samples.tobytes())
+    _write_wav(path, samples.tobytes())
+
+
+def _write_wav(path: Path, pcm: bytes) -> None:
+    """Mono 16-bit PCM WAV. Written by hand rather than with the wave module,
+    which the browser demo's Python (pygbag) doesn't ship: importing it makes
+    pygbag try a same-named package from PyPI and the page never starts."""
+    header = struct.pack("<4sI4s4sIHHIIHH4sI", b"RIFF", 36 + len(pcm), b"WAVE",
+                         b"fmt ", 16, 1, 1, RATE, RATE * 2, 2, 16,
+                         b"data", len(pcm))
+    with open(path, "wb") as f:
+        f.write(header)
+        f.write(pcm)
 
 
 def ensure_audio() -> None:
