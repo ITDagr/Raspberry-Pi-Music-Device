@@ -39,18 +39,23 @@ class ScreenDimmer:
     def _run(self) -> None:
         while True:
             time.sleep(0.25)
-            with self._lock:
-                if self._suspended:
-                    continue
-                idle = time.monotonic() - self._last_activity
-                if self._state is DimState.AWAKE and idle >= config.DIM_AFTER_S:
-                    self._state = DimState.DIM
-                    self._set_level(config.DIM_LEVEL)
-                    self._log(f"dim after {config.DIM_AFTER_S:.0f}s idle")
-                elif self._state is DimState.DIM and idle >= config.SLEEP_AFTER_S:
-                    self._state = DimState.SLEEP
-                    self._set_level(0.0)
-                    self._log(f"sleep after {config.SLEEP_AFTER_S:.0f}s idle")
+            self.tick()
+
+    def tick(self) -> None:
+        """One step of the AWAKE -> DIM -> SLEEP ladder. The thread calls it
+        every 0.25 s; the browser demo, which has no threads, calls it itself."""
+        with self._lock:
+            if self._suspended:
+                return
+            idle = time.monotonic() - self._last_activity
+            if self._state is DimState.AWAKE and idle >= config.DIM_AFTER_S:
+                self._state = DimState.DIM
+                self._set_level(config.DIM_LEVEL)
+                self._log(f"dim after {config.DIM_AFTER_S:.0f}s idle")
+            elif self._state is DimState.DIM and idle >= config.SLEEP_AFTER_S:
+                self._state = DimState.SLEEP
+                self._set_level(0.0)
+                self._log(f"sleep after {config.SLEEP_AFTER_S:.0f}s idle")
 
     def wake(self) -> None:
         """Reset the idle timer and restore the awake brightness."""

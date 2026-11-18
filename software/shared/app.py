@@ -686,131 +686,137 @@ class App:
         self.dimmer.start()
         clock = pygame.time.Clock()
 
-        while True:
-            now = time.monotonic()
-            if not self.power.is_on():
-                if self._soft_off(surface) == "quit":
-                    pygame.quit()
-                    return
-            for ev in self.input.read():
-                if ev == "quit":
-                    self._save_state()
-                    pygame.quit()
-                    return
-                if self.dimmer.state is not DimState.AWAKE:
-                    # dark screen: only the center button does anything — it
-                    # wakes, and the waking press is swallowed. Accept both a
-                    # tap ("select") and a hold ("back") so any center press
-                    # reliably turns the screen back on. Power off/on is the
-                    # Beret switch alone; the center press never toggles power.
-                    if ev in ("select", "back"):
-                        self.dimmer.wake()
-                        self._mark_full()
-                    continue
-                self.dimmer.wake()
-                self._mark_full()
-                self._handle_event(ev)
-
-            # library changes arriving from the web app thread
-            if self.web_events is not None:
-                while True:
-                    try:
-                        ev = self.web_events.get_nowait()
-                    except Exception:
-                        break
-                    if ev.get("tracks") is not None:
-                        self.apply_library(ev["tracks"])
-                    if ev.get("playlists"):
-                        self._playlists_changed()
-                    if ev.get("msg"):
-                        self._toast(ev["msg"])
-
-            # auto-advance, then the player's own bookkeeping
-            if self.player.track_finished:
-                self._next_track()
-                self._mark_full()
-            self.player.tick()
-            self._bluetooth_frame()
-
-            # on-demand WiFi: drop the radio once the upload queue drains
-            if self._wifi_drain and self._active_transfers() == 0:
-                self._wifi_drain = False
-                if (self.radio is not None and not self.wifi_pinned
-                        and self.mode is not Mode.WEBAPP):
-                    self.radio.set(False)
-            # animate/poll the Web App screen while WiFi is coming up (the
-            # info cache re-polls itself at 2 Hz; we just keep redrawing)
-            if (self.mode is Mode.WEBAPP
-                    and self._webapp_info().get("wifi_state") != "on"):
-                self._mark_full()
-
-            overlay_active = now < self.vol_flash_until
-            status = self._status()
-            if status != self._last_status:
-                self._last_status = status
-                # a clock/battery tick only repaints the status bar strip;
-                # other screens echo status in the body, so repaint fully
-                if self.mode in (Mode.MENU, Mode.NOWPLAYING) and not overlay_active:
-                    self._mark_partial(STATUS_BAR_RECT)
-                else:
-                    self._mark_full()
-            if self.dimmer.consume_wake():
-                self._mark_full()
-            if self.display.consume_level_change():
-                self._mark_full()
-            if self.mode is Mode.NOWPLAYING and self.player.playing:
-                whole = int(self.player.elapsed)
-                if whole != self._last_elapsed_int:
-                    self._last_elapsed_int = whole
-                    if overlay_active:  # overlay dims the whole frame: full
-                        self._mark_full()
-                    else:
-                        self._mark_partial(NOWPLAYING_TICK_RECT)
-            # the overlay itself is static while visible (volume changes are
-            # events -> full); only its expiry needs a repaint underneath
-            if self._overlay_was_active and not overlay_active:
-                self._mark_full()
-            self._overlay_was_active = overlay_active
-            toast_active = now < self.toast_until
-            if self._toast_was_active and not toast_active:
-                self._mark_full()  # toast expired: repaint beneath it
-            self._toast_was_active = toast_active
-
-            if self.player.playing and now - self._last_save > config.AUTOSAVE_INTERVAL_S:
-                self._save_state()
-
-            if self.needs_redraw or self._partial_rects:
-                self._render(surface)
-                # partial pushes only while fully awake — DIM/SLEEP levels go
-                # through full frames so the Mac's dim compositing stays exact
-                if not self.needs_redraw and self.dimmer.state is DimState.AWAKE:
-                    seen: set = set()
-                    for rect in self._partial_rects:
-                        key = (rect.x, rect.y, rect.w, rect.h)
-                        if key not in seen:
-                            seen.add(key)
-                            self.display.push_region(surface, rect)
-                    if config.DEBUG:
-                        print("redraw (partial)", self.mode.name)
-                else:
-                    self.display.push_frame(surface)
-                    if config.DEBUG:
-                        print("redraw", self.mode.name)
-                self.needs_redraw = False
-                self._partial_rects.clear()
-
-            # adaptive loop rate: nobody feels 10/2 Hz on a dim/dark screen
-            if self.dimmer.state is DimState.AWAKE:
-                self.loop_hz = config.FPS
-            elif self.dimmer.state is DimState.DIM:
-                self.loop_hz = config.FPS_DIM
-            else:
-                self.loop_hz = config.FPS_SLEEP
+        while self._frame(surface):
             if self.selftest:
                 self.selftest(self)
                 clock.tick(0)  # uncapped
             else:
                 clock.tick(self.loop_hz)
+
+    def _frame(self, surface) -> bool:
+        """One pass of the main loop (everything but the frame-rate wait).
+        Returns False once the app has quit. Split out of run() so the
+        browser demo can drive the same loop from an async main."""
+        now = time.monotonic()
+        if not self.power.is_on():
+            if self._soft_off(surface) == "quit":
+                pygame.quit()
+                return False
+        for ev in self.input.read():
+            if ev == "quit":
+                self._save_state()
+                pygame.quit()
+                return False
+            if self.dimmer.state is not DimState.AWAKE:
+                # dark screen: only the center button does anything — it
+                # wakes, and the waking press is swallowed. Accept both a
+                # tap ("select") and a hold ("back") so any center press
+                # reliably turns the screen back on. Power off/on is the
+                # Beret switch alone; the center press never toggles power.
+                if ev in ("select", "back"):
+                    self.dimmer.wake()
+                    self._mark_full()
+                continue
+            self.dimmer.wake()
+            self._mark_full()
+            self._handle_event(ev)
+
+        # library changes arriving from the web app thread
+        if self.web_events is not None:
+            while True:
+                try:
+                    ev = self.web_events.get_nowait()
+                except Exception:
+                    break
+                if ev.get("tracks") is not None:
+                    self.apply_library(ev["tracks"])
+                if ev.get("playlists"):
+                    self._playlists_changed()
+                if ev.get("msg"):
+                    self._toast(ev["msg"])
+
+        # auto-advance, then the player's own bookkeeping
+        if self.player.track_finished:
+            self._next_track()
+            self._mark_full()
+        self.player.tick()
+        self._bluetooth_frame()
+
+        # on-demand WiFi: drop the radio once the upload queue drains
+        if self._wifi_drain and self._active_transfers() == 0:
+            self._wifi_drain = False
+            if (self.radio is not None and not self.wifi_pinned
+                    and self.mode is not Mode.WEBAPP):
+                self.radio.set(False)
+        # animate/poll the Web App screen while WiFi is coming up (the
+        # info cache re-polls itself at 2 Hz; we just keep redrawing)
+        if (self.mode is Mode.WEBAPP
+                and self._webapp_info().get("wifi_state") != "on"):
+            self._mark_full()
+
+        overlay_active = now < self.vol_flash_until
+        status = self._status()
+        if status != self._last_status:
+            self._last_status = status
+            # a clock/battery tick only repaints the status bar strip;
+            # other screens echo status in the body, so repaint fully
+            if self.mode in (Mode.MENU, Mode.NOWPLAYING) and not overlay_active:
+                self._mark_partial(STATUS_BAR_RECT)
+            else:
+                self._mark_full()
+        if self.dimmer.consume_wake():
+            self._mark_full()
+        if self.display.consume_level_change():
+            self._mark_full()
+        if self.mode is Mode.NOWPLAYING and self.player.playing:
+            whole = int(self.player.elapsed)
+            if whole != self._last_elapsed_int:
+                self._last_elapsed_int = whole
+                if overlay_active:  # overlay dims the whole frame: full
+                    self._mark_full()
+                else:
+                    self._mark_partial(NOWPLAYING_TICK_RECT)
+        # the overlay itself is static while visible (volume changes are
+        # events -> full); only its expiry needs a repaint underneath
+        if self._overlay_was_active and not overlay_active:
+            self._mark_full()
+        self._overlay_was_active = overlay_active
+        toast_active = now < self.toast_until
+        if self._toast_was_active and not toast_active:
+            self._mark_full()  # toast expired: repaint beneath it
+        self._toast_was_active = toast_active
+
+        if self.player.playing and now - self._last_save > config.AUTOSAVE_INTERVAL_S:
+            self._save_state()
+
+        if self.needs_redraw or self._partial_rects:
+            self._render(surface)
+            # partial pushes only while fully awake — DIM/SLEEP levels go
+            # through full frames so the Mac's dim compositing stays exact
+            if not self.needs_redraw and self.dimmer.state is DimState.AWAKE:
+                seen: set = set()
+                for rect in self._partial_rects:
+                    key = (rect.x, rect.y, rect.w, rect.h)
+                    if key not in seen:
+                        seen.add(key)
+                        self.display.push_region(surface, rect)
+                if config.DEBUG:
+                    print("redraw (partial)", self.mode.name)
+            else:
+                self.display.push_frame(surface)
+                if config.DEBUG:
+                    print("redraw", self.mode.name)
+            self.needs_redraw = False
+            self._partial_rects.clear()
+
+        # adaptive loop rate: nobody feels 10/2 Hz on a dim/dark screen
+        if self.dimmer.state is DimState.AWAKE:
+            self.loop_hz = config.FPS
+        elif self.dimmer.state is DimState.DIM:
+            self.loop_hz = config.FPS_DIM
+        else:
+            self.loop_hz = config.FPS_SLEEP
+        return True
 
 
 def run(hw: HardwareBundle, tracks: list[Track], bluetooth_module, *,

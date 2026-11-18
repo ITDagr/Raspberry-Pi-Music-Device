@@ -21,5 +21,7 @@ Limits: It currently functions on what I would consider is slow firmware with a 
 
 Other Software: This device ships with 2 sets of AI Designed software. One runs the music engine, and the other runs a simple local AI. This device is great for interesting handheld code on a very powerful mobile computer for anyone interested
 
+The code for both is in [software/](software/), with the local AI in [software/pizero-llm-demo/](software/pizero-llm-demo/). You can try the music engine in your browser here: [Raspberry Pi Music Device demo](https://itdagr.github.io/Raspberry-Pi-Music-Device/)
+
 
 What's Next: I have long planned a version 2 of this simple prototype I built. I plan to build it around a low-power microcontroller with a separate Bluetooth radio and a custom PCB with a Teenage Engineering style appearance and feature set that is more focused on music listeners instead of creators.

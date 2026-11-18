@@ -13,7 +13,7 @@ from types import SimpleNamespace
 
 os.environ.setdefault("SDL_VIDEODRIVER", "dummy")
 
-V1 = sys.argv[1] if len(sys.argv) > 1 else "/Users/iandagerman/Downloads/device"
+V1 = sys.argv[1] if len(sys.argv) > 1 else os.path.expanduser("~/Downloads/device")
 OUT = sys.argv[2] if len(sys.argv) > 2 else "/tmp/v1frames"
 sys.path.insert(0, os.path.join(V1, "shared"))
 

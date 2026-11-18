@@ -7,6 +7,10 @@ dragging songs into a browser, no cables — and there's a
 **pixel-identical Mac simulator** so you can try everything right now
 with no hardware at all.
 
+**Try it in your browser:** [Raspberry Pi Music Device demo](https://itdagr.github.io/Raspberry-Pi-Music-Device/)
+(the same app, built for the web from [web/](web/); mouse wheel or drag to
+scroll, click to select, hold or right click to go back).
+
 ## Getting Started
 
 ### Track A — Try it on your Mac (2 minutes)

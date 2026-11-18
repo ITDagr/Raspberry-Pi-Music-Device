@@ -17,7 +17,8 @@ FPS_DIM = 10            # while DIM
 FPS_SLEEP = 2           # while SLEEP (soft-off has its own ~4 Hz poll)
 
 # --- platform / persistence -------------------------------------------------
-IS_MAC = sys.platform == "darwin"
+# the browser demo (web/, "emscripten") runs the Mac stand-ins, so it counts as Mac
+IS_MAC = sys.platform in ("darwin", "emscripten")
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 # Mac: state lives next to the repo. Pi: home of the default `pi` user.
 STATE_PATH = (
