@@ -1,0 +1,38 @@
+[Unit]
+Description=llama.cpp server (pizero-llm-demo inference backend)
+After=local-fs.target
+# Deliberately NOT After=network-online.target: the server binds loopback only,
+# so waiting for DHCP just adds 10-20s to every cold boot.
+
+# StartLimitIntervalSec belongs in [Unit], not [Service] -- systemd warns and
+# ignores it in [Service]. 0 = never permanently give up restarting, so a
+# boot-time SD stall cannot wedge the unit in `failed` until someone SSHes in.
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+User=@USER@
+WorkingDirectory=@LLAMA_DIR@
+# Prebuilt release archives ship shared libs alongside the binaries.
+Environment=LD_LIBRARY_PATH=@LLAMA_DIR@/bin
+
+# --mlock is deliberately absent: with the model sitting near the RAM ceiling,
+# locking the pages fights the page cache instead of helping it.
+ExecStart=@LLAMA_DIR@/bin/llama-server \
+    --model @MODEL@ \
+    --host 127.0.0.1 --port @PORT@ \
+    --ctx-size @CTX@ \
+    --threads @THREADS@ \
+    --cache-type-k @KV@
+
+# The model is the demo — if something must die under memory pressure, it
+# should be the UI, which systemd will bring straight back.
+OOMScoreAdjust=-500
+# Let the UI win scheduler ties so the screen stays responsive mid-generation.
+Nice=5
+
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

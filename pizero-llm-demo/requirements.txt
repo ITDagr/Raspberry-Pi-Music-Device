@@ -1,0 +1,18 @@
+# pizero-llm-demo — UI process, pip-installed portion only.
+#
+# Everything with a C extension comes from apt instead (see install.sh), because
+# it ships prebuilt for the system Python and compiling numpy or Pillow on a
+# Zero 2 W costs an hour:
+#
+#   python3-numpy      python3-pil       python3-spidev
+#   python3-rpi-lgpio  <- provides the `RPi.GPIO` module name on trixie, where
+#                         classic RPi.GPIO is deprecated on the 6.x kernel
+#
+# The venv is created with --system-site-packages so those are visible. What is
+# left is pure Python and installs in seconds.
+#
+# No pygame: Pillow + numpy render the frame for roughly 35 MB less resident
+# memory, which is most of a quantisation step's worth of model.
+adafruit-blinka>=8.20
+adafruit-circuitpython-seesaw>=1.14
+adafruit-circuitpython-drv2605>=1.3
