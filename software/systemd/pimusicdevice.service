@@ -1,0 +1,26 @@
+[Unit]
+Description=pimusicdevice — pocket music player
+# Deliberately NOT ordered after network-online.target: the app manages WiFi
+# itself (off by default) and the web app binds without a live network, so
+# waiting for DHCP/WiFi association here added ~10-20s of dead time to every
+# boot for a network the app then turns off. Start as soon as MPD/BT/audio
+# are up instead.
+After=mpd.service bluetooth.service sound.target
+Wants=mpd.service
+# never permanently give up restarting: a flaky boot-time I2C/encoder read
+# could otherwise crash the app past StartLimitBurst, leaving the device dead
+# until a manual restart ("doesn't come back after a power cycle")
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/pi/pimusicdevice
+ExecStartPre=+/bin/sh /home/pi/pimusicdevice/pi/unblock_bluetooth.sh
+ExecStart=/usr/bin/python3 /home/pi/pimusicdevice/pi/device.py
+Restart=on-failure
+RestartSec=3
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target

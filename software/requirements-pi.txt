@@ -1,0 +1,14 @@
+# device v2 — Raspberry Pi (Pi OS Bookworm Lite, Python 3.11)
+pygame>=2.1
+numpy
+spidev
+RPi.GPIO
+adafruit-blinka
+adafruit-circuitpython-seesaw
+adafruit-circuitpython-drv2605
+python-mpd2
+smbus2          # boot-time encoder probe + tools/i2c_scan.py
+flask           # the library web app the device serves
+mutagen         # tag read/write for uploads and retagging
+segno           # QR code on the Web App screen (pure Python)
+zeroconf        # best-effort service advertisement next to avahi's mDNS
